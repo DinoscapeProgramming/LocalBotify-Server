@@ -1,39 +1,149 @@
 require("@teeny-tiny/dotenv").config();
 const express = require("express");
 const app = express();
-const pantry = require("pantry-node");
-const pantryClient = new pantry(process.env.PANTRY_ID);
+const requestIp = require("request-ip");
+const pantry = new (require("pantry-node"))(process.env.PANTRY_ID);
+const basket = pantry.basket;
+const crypto = require("crypto");
 
-pantryClient.basket.get("proTokens").then(() => {
-  pantryClient.basket.create("proTokens", []);
-});
+if ((process.env.SAFE_MODE || "false") === "true") {
+  try {
+    basket.get("proTokens").catch(() => {
+      basket.create("proTokens", {
+        proTokens: [],
+        activity: 0
+      }).catch(() => {});
+    });
+  } catch {
+    basket.create("proTokens", {
+      proTokens: [],
+      activity: 0
+    }).catch(() => {});
+  };
 
-pantryClient.basket.get("bots").then(() => {
-  pantryClient.basket.create("bots", {
-    version: "1"
+  try {
+    basket.get("botSites").catch(() => {
+      basket.create("botSites", {
+        version: "1",
+        activity: Date.now()
+      }).catch(() => {});
+    });
+  } catch {
+    basket.create("botSites", {
+      version: "1",
+      activity: Date.now()
+    }).catch(() => {});
+  };
+
+  try {
+    basket.get("store").catch(() => {
+      basket.create("store", {
+        version: "1",
+        activity: Date.now()
+      }).catch(() => {});
+    });
+  } catch {
+    basket.create("store", {
+      version: "1",
+      activity: Date.now()
+    }).catch(() => {});
+  };
+
+  basket.get("proTokens").then((proTokens) => {
+    basket.update("proTokens", {
+      ...proTokens,
+      ...{
+        activity: Date.now()
+      }
+    }, {
+      parseJSON: true
+    }).catch(() => {});
   });
-});
+
+  basket.get("botSites").then((botSites) => {
+    basket.update("botSites", {
+      ...botSites,
+      ...{
+        activity: Date.now()
+      }
+    }, {
+      parseJSON: true
+    }).catch(() => {});
+  });
+
+  basket.get("store").then((store) => {
+    basket.update("store", {
+      ...store,
+      ...{
+        activity: Date.now()
+      }
+    }, {
+      parseJSON: true
+    }).catch(() => {});
+  });
+
+  setInterval(() => {
+    basket.get("proTokens").then((proTokens) => {
+      basket.update("proTokens", {
+        ...proTokens,
+        ...{
+          activity: Date.now()
+        }
+      }, {
+        parseJSON: true
+      }).catch(() => {});
+    }).catch(() => {});
+    
+    basket.get("botSites").then((botSites) => {
+      basket.update("botSites", {
+        ...botSites,
+        ...{
+          activity: Date.now()
+        }
+      }, {
+        parseJSON: true
+      }).catch(() => {});
+    }).catch(() => {});
+
+    basket.get("store").then((store) => {
+      basket.update("store", {
+        ...store,
+        ...{
+          activity: Date.now()
+        }
+      }, {
+        parseJSON: true
+      }).catch(() => {});
+    }).catch(() => {});
+  }, 3600000);
+};
 
 app.use(express.json());
+app.use(requestIp.mw());
 app.set("views", __dirname);
 app.set("view engine", "ejs");
 app.use("/assets", express.static("assets"));
 app.use("/pages", express.static("pages"));
 
 app.post("/api/v1/pro/verify", (req, res) => {
-  pantryClient.basket.get("proTokens", {
+  basket.get("proTokens", {
     parseJSON: true
-  }).then((proTokens) => {
-    res.json(proTokens.includes(req.body));
-  });
+  }).then(({ proTokens }) => {
+    res.json(proTokens.includes(crypto.createHash("sha256").update(req.body).digest("hex")));
+  }).catch(() => {});
 });
 
 app.all("/bots/:botId", (req, res) => {
-  pantryClient.basket.get("bots", {
+  basket.get("botSites", {
     parseJSON: true
   }).then(({ version, [req.params.botId]: bot }) => {
     if (version === "1") {
-      if (!bot) return res.status(404).send("Bot not found");
+      if (["version", "activity"].includes(req.params.botId) || !bot) return res.status(404).send({
+        err: "Bot not found",
+        message: null,
+        result: null
+      });
+
       res.render("pages/bot/index.ejs", {
         name: bot[1],
         description: bot[2],
@@ -46,18 +156,19 @@ app.all("/bots/:botId", (req, res) => {
         features: bot.slice(7)
       });
     };
-  });
+  }).catch(() => {});
 });
 
 app.post("/api/v1/bots/add", (req, res) => {
   let bot = req.body;
 
-  pantryClient.basket.get("proTokens", {
+  basket.get("proTokens", {
     parseJSON: true
-  }).then((proTokens) => {
-    if (!proTokens.includes(bot[0])) return res.status(400).json({
+  }).then(({ proTokens }) => {
+    if (!proTokens.includes(crypto.createHash("sha256").update(bot[0]).digest("hex"))) return res.status(400).json({
       err: "Invalid pro token",
-      message: null
+      message: null,
+      result: null
     });
 
     if ((JSON.stringify(Array.from(new Set([
@@ -84,7 +195,8 @@ app.post("/api/v1/bots/add", (req, res) => {
       100
     ][index % 3])) return res.status(400).json({
       err: "Invalid input data",
-      message: null
+      message: null,
+      result: null
     });
 
     try {
@@ -92,19 +204,172 @@ app.post("/api/v1/bots/add", (req, res) => {
     } catch {
       return res.status(400).json({
         err: "Invalid input data",
-        message: null
+        message: null,
+        result: null
       });
     };
 
-    pantryClient.basket.update("bots", bot, {
+    let id = Date.now();
+
+    basket.get("botSites", {
       parseJSON: true
-    }).then(() => {
-      res.status(200).json({
-        err: null,
-        message: "Success"
-      });
-    });
+    }).then((botSites) => {
+      basket.update("botSites", {
+        ...botSites,
+        ...{
+          [id]: [
+            ...[
+              req.clientIp || null
+            ],
+            ...bot.slice(1)
+          ]
+        }
+      }, {
+        parseJSON: true
+      }).then(() => {
+        res.status(200).json({
+          err: null,
+          message: "Success",
+          result: {
+            id
+          }
+        });
+      }).catch(() => {});
+    }).catch(() => {});
+  }).catch(() => {});
+});
+
+app.get("/api/v1/store/all", (req, res) => {
+  basket.get("store", {
+    parseJSON: true
+  }).then((store) => {
+    res.status(200).json(store);
   });
+});
+
+app.post("/api/v1/store/add", async (req, res) => {
+  let bot = req.body;
+
+  if (![
+    bot.avatar,
+    bot.name,
+    bot.description,
+    bot.repository
+  ].every((property) => typeof property === "string") || !/(?:\p{Emoji}(?:\p{Emoji_Modifier}|\uFE0F)?(?:\u200D\p{Emoji})*)/gu.test(bot.avatar) || /^[0-9]$|[.*+?^${}()|[\]\\]/.test(bot.avatar)) return res.status(400).json({
+    err: "Invalid input data",
+    message: null,
+    result: null
+  });
+
+  try {
+    let match = bot.repository.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)(\/)?$/);
+
+    if (!match) return res.status(400).json({
+      err: "Invalid repository URL",
+      message: null,
+      result: null
+    });
+
+    let response = await fetch(`https://api.github.com/repos/${match[1]}/${match[2]}`);
+
+    if (response.status !== 200) return res.status(400).json({
+      err: "Invalid repository URL",
+      message: null,
+      result: null
+    });
+  } catch (err) {
+    return res.status(400).json({
+      err,
+      message: null,
+      result: null
+    })
+  };
+
+  let id = Date.now();
+
+  basket.get("store", {
+    parseJSON: true
+  }).then((store) => {
+    if (store.version === "1") {
+      basket.update("store", {
+        ...store,
+        ...{
+          [id]: [
+            bot.avatar,
+            bot.name,
+            bot.description || null,
+            bot.repository,
+            false,
+            0,
+            0,
+            [],
+            []
+          ]
+        }
+      }, {
+        parseJSON: true
+      }).then(() => {
+        res.status(200).json({
+          err: null,
+          message: "Success",
+          result: {
+            id
+          }
+        });
+      }).catch(() => {});
+    };
+  }).catch(() => {});
+});
+
+app.post("/api/v1/store/like", (req, res) => {
+  let id = req.body.id;
+
+  basket.get("store", {
+    parseJSON: true
+  }).then((store) => {
+    if (store.version === "1") {
+      if (["version", "activity"].includes(id) || !Object.keys(store).includes(id)) return res.status(400).json({
+        err: "Invalid input data",
+        message: null,
+        result: null
+      });
+
+      if (store[id][8].includes(req.clientIp)) return res.status(400).json({
+        err: "Already liked",
+        message: null,
+        result: null
+      });
+
+      basket.update("store", {
+        ...store,
+        ...{
+          [id]: [
+            ...store[id].slice(0, 6),
+            ...[
+              (store[id][6] || 0) + 1,
+              store[7],
+              [
+                ...store[8],
+                ...[
+                  req.clientIp
+                ]
+              ]
+            ]
+          ]
+        }
+      }, {
+        parseJSON: true
+      }).then(() => {
+        res.status(200).json({
+          err: null,
+          message: "Success",
+          result: {
+            id
+          }
+        })
+      }).catch(() => {});
+    };
+  }).catch(() => {});
 });
 
 const listen = app.listen(3000, () => {
