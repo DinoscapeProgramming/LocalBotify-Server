@@ -1,375 +1,194 @@
 require("@teeny-tiny/dotenv").config();
+const PantrySDK = require("pantry.js");
 const express = require("express");
 const app = express();
 const requestIp = require("request-ip");
-const pantry = new (require("pantry-node"))(process.env.PANTRY_ID);
-const basket = pantry.basket;
+const rateLimit = require("express-rate-limit");
 const crypto = require("crypto");
 
-if ((process.env.SAFE_MODE || "false") === "true") {
-  try {
-    basket.get("proTokens").catch(() => {
-      basket.create("proTokens", {
-        proTokens: [],
-        activity: 0
-      }).catch(() => {});
-    });
-  } catch {
-    basket.create("proTokens", {
-      proTokens: [],
-      activity: 0
-    }).catch(() => {});
-  };
-
-  try {
-    basket.get("botSites").catch(() => {
-      basket.create("botSites", {
-        version: "1",
-        activity: Date.now()
-      }).catch(() => {});
-    });
-  } catch {
-    basket.create("botSites", {
-      version: "1",
-      activity: Date.now()
-    }).catch(() => {});
-  };
-
-  try {
-    basket.get("store").catch(() => {
-      basket.create("store", {
-        version: "1",
-        activity: Date.now()
-      }).catch(() => {});
-    });
-  } catch {
-    basket.create("store", {
-      version: "1",
-      activity: Date.now()
-    }).catch(() => {});
-  };
-
-  basket.get("proTokens").then((proTokens) => {
-    basket.update("proTokens", {
-      ...proTokens,
-      ...{
-        activity: Date.now()
-      }
-    }, {
-      parseJSON: true
-    }).catch(() => {});
-  });
-
-  basket.get("botSites").then((botSites) => {
-    basket.update("botSites", {
-      ...botSites,
-      ...{
-        activity: Date.now()
-      }
-    }, {
-      parseJSON: true
-    }).catch(() => {});
-  });
-
-  basket.get("store").then((store) => {
-    basket.update("store", {
-      ...store,
-      ...{
-        activity: Date.now()
-      }
-    }, {
-      parseJSON: true
-    }).catch(() => {});
-  });
-
-  setInterval(() => {
-    basket.get("proTokens").then((proTokens) => {
-      basket.update("proTokens", {
-        ...proTokens,
-        ...{
-          activity: Date.now()
-        }
-      }, {
-        parseJSON: true
-      }).catch(() => {});
-    }).catch(() => {});
-    
-    basket.get("botSites").then((botSites) => {
-      basket.update("botSites", {
-        ...botSites,
-        ...{
-          activity: Date.now()
-        }
-      }, {
-        parseJSON: true
-      }).catch(() => {});
-    }).catch(() => {});
-
-    basket.get("store").then((store) => {
-      basket.update("store", {
-        ...store,
-        ...{
-          activity: Date.now()
-        }
-      }, {
-        parseJSON: true
-      }).catch(() => {});
-    }).catch(() => {});
-  }, 3600000);
-};
+const pantry = new PantrySDK(process.env.PANTRY_ID);
 
 app.use(express.json());
 app.use(requestIp.mw());
+app.use(["/api/v1/bots/add", "/api/v1/store/add", "/api/v1/store/install", "/api/v1/store/like", "/api/v1/reports/add"], rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 100,
+  message: "Too many requests, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false
+}));
 app.set("views", __dirname);
 app.set("view engine", "ejs");
 app.use("/assets", express.static("assets"));
 app.use("/pages", express.static("pages"));
 
-app.post("/api/v1/pro/verify", (req, res) => {
-  basket.get("proTokens", {
-    parseJSON: true
-  }).then(({ proTokens }) => {
-    res.json(proTokens.includes(crypto.createHash("sha256").update(req.body).digest("hex")));
-  }).catch(() => {});
+async function initializeBaskets() {
+  const store = await pantry.store; 
+  const proTokens = await pantry.proTokens;
+  const botSites = await pantry.botSites;
+  const reports = await pantry.reports;
+
+  if (!store.version) store.version = "1";
+  if (!proTokens.proTokens) proTokens.proTokens = [];
+  if (!botSites.version) botSites.version = "1";
+  if (!reports.version) reports.version = "1";
+  
+  proTokens.activity = Date.now();
+  botSites.activity = Date.now();
+  store.activity = Date.now();
+  reports.activity = Date.now();
+
+  setInterval(() => {
+    proTokens.activity = Date.now();
+    botSites.activity = Date.now();
+    store.activity = Date.now();
+    reports.activity = Date.now();
+  }, 3600000);
+}
+
+if ((process.env.SAFE_MODE || "false") === "true") initializeBaskets().catch(console.error);
+
+app.post("/api/v1/pro/verify", async (req, res) => {
+  const proTokens = await pantry.proTokens;
+  const hashedToken = crypto.createHash("sha256").update(req.body).digest("hex");
+  const isValid = proTokens.proTokens.includes(hashedToken);
+  res.json(isValid);
 });
 
-app.all("/bots/:botId", (req, res) => {
-  basket.get("botSites", {
-    parseJSON: true
-  }).then(({ version, [req.params.botId]: bot }) => {
-    if (version === "1") {
-      if (["version", "activity"].includes(req.params.botId) || !bot) return res.status(404).send({
-        err: "Bot not found",
-        message: null,
-        result: null
-      });
-
-      res.render("pages/bot/index.ejs", {
-        name: bot[1],
-        description: bot[2],
-        stats: [
-          bot[3],
-          bot[4],
-          bot[5]
-        ],
-        invite: bot[6],
-        features: bot.slice(7)
-      });
-    };
-  }).catch(() => {});
-});
-
-app.post("/api/v1/bots/add", (req, res) => {
-  let bot = req.body;
-
-  basket.get("proTokens", {
-    parseJSON: true
-  }).then(({ proTokens }) => {
-    if (!proTokens.includes(crypto.createHash("sha256").update(bot[0]).digest("hex"))) return res.status(400).json({
-      err: "Invalid pro token",
-      message: null,
-      result: null
+app.all("/bots/:botId", async (req, res) => {
+  const botSites = await pantry.botSites;
+  const bot = botSites[req.params.botId];
+  if (bot && botSites.version === "1") {
+    res.render("pages/bot/index.ejs", {
+      name: bot[1],
+      description: bot[2],
+      stats: [bot[3], bot[4], bot[5]],
+      invite: bot[6],
+      features: bot.slice(7)
     });
-
-    if ((JSON.stringify(Array.from(new Set([
-      ...[
-        typeof bot[1],
-        typeof bot[2],
-        typeof bot[6]
-      ],
-      ...bot.slice(7).map((feature) => typeof feature)
-    ]))) !== `["string"]`) || (JSON.stringify(Array.from(new Set([
-      typeof bot[3],
-      typeof bot[4],
-      typeof bot[5]
-    ]))) !== `["number"]`) || (bot.slice(7).length > 30) || ((bot.slice(7).length % 3) !== 0) || [
-      20,
-      100,
-      10,
-      10,
-      10,
-      50
-    ].map((length, index) => bot[index].length > length).includes(true) || bot.slice(7).map((feature, index) => feature.length > [
-      20,
-      20,
-      100
-    ][index % 3])) return res.status(400).json({
-      err: "Invalid input data",
-      message: null,
-      result: null
-    });
-
-    try {
-      new URL(bot[6]);
-    } catch {
-      return res.status(400).json({
-        err: "Invalid input data",
-        message: null,
-        result: null
-      });
-    };
-
-    let id = Date.now();
-
-    basket.get("botSites", {
-      parseJSON: true
-    }).then((botSites) => {
-      basket.update("botSites", {
-        ...botSites,
-        ...{
-          [id]: [
-            ...[
-              req.clientIp || null
-            ],
-            ...bot.slice(1)
-          ]
-        }
-      }, {
-        parseJSON: true
-      }).then(() => {
-        res.status(200).json({
-          err: null,
-          message: "Success",
-          result: {
-            id
-          }
-        });
-      }).catch(() => {});
-    }).catch(() => {});
-  }).catch(() => {});
+  } else {
+    res.status(404).send({ err: "Bot not found" });
+  }
 });
 
-app.get("/api/v1/store/all", (req, res) => {
-  basket.get("store", {
-    parseJSON: true
-  }).then((store) => {
-    res.status(200).json(store);
-  });
+app.post("/api/v1/bots/add", async (req, res) => {
+  const bot = req.body;
+  const proTokens = await pantry.proTokens;
+  const isValidToken = proTokens.proTokens.includes(crypto.createHash("sha256").update(bot[0]).digest("hex"));
+  
+  if (!isValidToken) {
+    return res.status(400).json({ err: "Invalid pro token" });
+  }
+
+  if (!["string"].some(type => !bot.slice(1, 7).every(val => typeof val === type)) ||
+    bot.slice(7).length > 30 || (bot.slice(7).length % 3) !== 0 ||
+    [20, 100, 10, 10, 10, 50].map((len, idx) => bot[idx].length > len).includes(true) ||
+    bot.slice(7).some((feature, idx) => feature.length > [20, 20, 100][idx % 3])) {
+    return res.status(400).json({ err: "Invalid input data" });
+  }
+
+  try {
+    new URL(bot[6]);
+  } catch {
+    return res.status(400).json({ err: "Invalid repository URL" });
+  }
+
+  const botSites = await pantry.botSites;
+  let id = Date.now();
+  botSites[id] = [req.clientIp || null, ...bot.slice(1)];
+
+  res.status(200).json({ id });
+});
+
+app.get("/api/v1/store/all", async (req, res) => {
+  const store = await pantry.store;
+  if (store.version === "1") {
+    const responseData = {
+      version: store.version,
+      activity: store.activity,
+      ...Object.fromEntries(Object.entries(store)
+        .filter(([key]) => !["version", "activity"].includes(key))
+        .sort((a, b) => b[1].verified - a[1].verified || b[1].installs - a[1].installs))
+    };
+    res.status(200).json(responseData);
+  } else {
+    res.status(400).json({ err: "Version mismatch" });
+  }
 });
 
 app.post("/api/v1/store/add", async (req, res) => {
-  let bot = req.body;
+  const store = await pantry.store;
+  const bot = req.body;
 
-  if (![
-    bot.avatar,
-    bot.name,
-    bot.description,
-    bot.repository
-  ].every((property) => typeof property === "string") || !/(?:\p{Emoji}(?:\p{Emoji_Modifier}|\uFE0F)?(?:\u200D\p{Emoji})*)/gu.test(bot.avatar) || /^[0-9]$|[.*+?^${}()|[\]\\]/.test(bot.avatar)) return res.status(400).json({
-    err: "Invalid input data",
-    message: null,
-    result: null
-  });
+  if (![bot.avatar, bot.name, bot.description, bot.repository].every(val => typeof val === "string") || !/(?:\p{Emoji}(?:\p{Emoji_Modifier}|\uFE0F)?(?:\u200D\p{Emoji})*)/gu.test(bot.avatar)) {
+    return res.status(400).json({ err: "Invalid input data" });
+  }
 
   try {
     let match = bot.repository.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)(\/)?$/);
-
-    if (!match) return res.status(400).json({
-      err: "Invalid repository URL",
-      message: null,
-      result: null
-    });
+    if (!match) return res.status(400).json({ err: "Invalid repository URL" });
 
     let response = await fetch(`https://api.github.com/repos/${match[1]}/${match[2]}`);
-
-    if (response.status !== 200) return res.status(400).json({
-      err: "Invalid repository URL",
-      message: null,
-      result: null
-    });
+    if (response.status !== 200) return res.status(400).json({ err: "Invalid repository URL" });
   } catch (err) {
-    return res.status(400).json({
-      err,
-      message: null,
-      result: null
-    })
-  };
+    return res.status(400).json({ err: err.message });
+  }
 
-  let id = Date.now();
+  const id = Date.now();
+  store[id] = [bot.avatar, bot.name, bot.description, bot.repository, false, 0, 0, [], []];
 
-  basket.get("store", {
-    parseJSON: true
-  }).then((store) => {
-    if (store.version === "1") {
-      basket.update("store", {
-        ...store,
-        ...{
-          [id]: [
-            bot.avatar,
-            bot.name,
-            bot.description || null,
-            bot.repository,
-            false,
-            0,
-            0,
-            [],
-            []
-          ]
-        }
-      }, {
-        parseJSON: true
-      }).then(() => {
-        res.status(200).json({
-          err: null,
-          message: "Success",
-          result: {
-            id
-          }
-        });
-      }).catch(() => {});
-    };
-  }).catch(() => {});
+  res.status(200).json({ id });
 });
 
-app.post("/api/v1/store/like", (req, res) => {
-  let id = req.body.id;
+app.post("/api/v1/store/install", async (req, res) => {
+  const store = await pantry.store;
+  const id = req.body.id;
 
-  basket.get("store", {
-    parseJSON: true
-  }).then((store) => {
-    if (store.version === "1") {
-      if (["version", "activity"].includes(id) || !Object.keys(store).includes(id)) return res.status(400).json({
-        err: "Invalid input data",
-        message: null,
-        result: null
-      });
+  if (store.version === "1" && store[id]) {
+    const installs = store[id][7];
+    if (installs.includes(req.clientIp)) {
+      return res.status(400).json({ err: "Already installed" });
+    }
 
-      if (store[id][8].includes(req.clientIp)) return res.status(400).json({
-        err: "Already liked",
-        message: null,
-        result: null
-      });
+    store[id][5] = (store[id][5] || 0) + 1;
+    store[id][7].push(req.clientIp);
 
-      basket.update("store", {
-        ...store,
-        ...{
-          [id]: [
-            ...store[id].slice(0, 6),
-            ...[
-              (store[id][6] || 0) + 1,
-              store[7],
-              [
-                ...store[8],
-                ...[
-                  req.clientIp
-                ]
-              ]
-            ]
-          ]
-        }
-      }, {
-        parseJSON: true
-      }).then(() => {
-        res.status(200).json({
-          err: null,
-          message: "Success",
-          result: {
-            id
-          }
-        })
-      }).catch(() => {});
-    };
-  }).catch(() => {});
+    res.status(200).json({ id });
+  } else {
+    res.status(400).json({ err: "Version mismatch" });
+  }
+});
+
+app.post("/api/v1/store/like", async (req, res) => {
+  const store = await pantry.store;
+  const id = req.body.id;
+
+  if (store.version === "1" && store[id]) {
+    const likes = store[id][8];
+    if (likes.includes(req.clientIp)) {
+      return res.status(400).json({ err: "Already liked" });
+    }
+
+    store[id][6] = (store[id][6] || 0) + 1;
+    store[id][8].push(req.clientIp);
+
+    res.status(200).json({ id });
+  } else {
+    res.status(400).json({ err: "Version mismatch" });
+  }
+});
+
+app.post("/api/v1/reports/add", async (req, res) => {
+  const reports = await pantry.reports;
+  const report = req.body;
+
+  if (!["version", "activity"].includes(report.id) && ["malicious", "tosViolation", "privacyAbuse", "broken", "misleading", "stolen", "other"].includes(report.reason) && typeof report.context === "string" && report.context.length <= 200) {
+    reports[report.id] = reports[report.id] || [];
+    reports[report.id].push([["malicious", "tosViolation", "privacyAbuse", "broken", "misleading", "stolen", "other"].indexOf(report.reason), report.context]);
+    res.status(200).json({ message: "Success" });
+  } else {
+    res.status(400).json({ err: "Invalid input data" });
+  }
 });
 
 const listen = app.listen(3000, () => {
