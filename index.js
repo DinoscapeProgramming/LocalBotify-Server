@@ -21,6 +21,7 @@ app.set("views", __dirname);
 app.set("view engine", "ejs");
 app.use("/assets", express.static("assets"));
 app.use("/pages", express.static("pages"));
+app.use("/packages", express.static("packages"));
 
 async function initializeBaskets() {
   const store = await pantry.store; 
@@ -47,6 +48,12 @@ async function initializeBaskets() {
 }
 
 if ((process.env.SAFE_MODE || "false") === "true") initializeBaskets().catch(console.error);
+
+app.all("/ai", (req, res) => {
+  res.sendFile("pages/ai/index.html", {
+    root: __dirname
+  });
+});
 
 app.post("/api/v1/pro/verify", async (req, res) => {
   const proTokens = await pantry.proTokens;
