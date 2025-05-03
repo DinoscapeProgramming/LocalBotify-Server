@@ -1,553 +1,1036 @@
-const workspaceView = document.querySelector(".workspace-view");
+const id = location.pathname.split("/")[2];
+const socket = io("/");
 
-workspaceView.innerHTML = `
-      <div class="workspace-tabs">
-        <button class="active currentView">
-          <i class="fas fa-tools"></i>
-          Workbench
-        </button>
-        <button>
-          <i class="fas fa-code"></i>
-          Code Lab
-        </button>
-        <button>
-          <i class="fas fa-trophy"></i>
-          Pro Suite
-        </button>
+let editor = null;
+
+socket.emit("joinRoom", id);
+
+socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
+  const workspaceView = document.querySelector(".workspace-view");
+  const editorView = workspaceView.querySelector(".code-editor-view");
+
+  workspaceView.querySelectorAll(".workspace-tabs button").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      if (tab.querySelector("i").className === "fas fa-tools") {
+        tab.classList.add("active");
+        Array.from(workspaceView.querySelectorAll(".workspace-tabs button")).find((tab) => tab.querySelector("i").className === "fas fa-code").classList.remove("active");
+
+        showDownloadModal();
+      } else if (tab.querySelector("i").className === "fas fa-trophy") {
+        tab.classList.add("active");
+        Array.from(workspaceView.querySelectorAll(".workspace-tabs button")).find((tab) => tab.querySelector("i").className === "fas fa-code").classList.remove("active");
+
+        showUpgradeModal();
+      };
+    });
+  });
+
+  editorView.style.display = "grid";
+  editorView.style.animation = "slideUp 0.5s ease";
+  editorView.querySelector(".file-tree").innerHTML = renderFileTree(generateFileTree(fileSystem));
+  editorView.querySelector(".editor-content textarea").value = fileContent || "";
+  editorView.querySelector(".editor-content-missing").style.display = (fileName) ? "none" : "block";
+
+  const addFileBtn = editorView.querySelector(`.file-explorer-btn[title="New File"]`);
+  [
+    ...[
+      addFileBtn
+    ],
+    ...(editorView.querySelector(".editor-content-missing")) ? [
+      editorView.querySelectorAll(".editor-content-missing button")[1]
+    ] : []
+  ].forEach((button) => {
+    button.addEventListener("click", () => {
+      let newFileTreeItem = document.createElement("div");
+      newFileTreeItem.className = "file-tree-item";
+      newFileTreeItem.style.cursor = "text";
+      newFileTreeItem.innerHTML = `
+        <i class="fas fa-file"></i>
+        <span contenteditable="true"></span>
+      `;
+
+      newFileTreeItem.querySelector("span").addEventListener("blur", () => {
+        if (!newFileTreeItem.querySelector("span").textContent.trim()) return newFileTreeItem.remove();
+        if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+        newFileTreeItem.style.removeProperty("cursor");
+        newFileTreeItem.querySelector("i").className = `fas ${(newFileTreeItem.querySelector("span").textContent.endsWith(".json")) ? "fa-file" : "fa-file-code"}`;
+        newFileTreeItem.querySelector("span").contentEditable = false;
+        newFileTreeItem.dataset.filename = newFileTreeItem.querySelector("span").textContent;
+
+        socket.emit("newFileSystem", [
+          "createFile",
+          [
+            getFilePath(newFileTreeItem)
+          ]
+        ]);
+
+        newFileTreeItem.addEventListener("click", () => {
+          const fileItems = editorView.querySelectorAll(".file-tree-item");
+
+          fileItems.forEach((i) => i.classList.remove("active", "active-file"));
+          newFileTreeItem.classList.add("active", "active-file");
+
+          socket.emit("retrieveFileContent", getFilePath(newFileTreeItem));
+        });
+
+        newFileTreeItem.addEventListener("contextmenu", (e) => {
+          if (document.body.querySelector(".file-tree-context-menu")) document.body.querySelector(".file-tree-context-menu").remove();
+
+          const contextMenu = document.createElement("div");
+          contextMenu.className = "file-tree-context-menu";
+
+          contextMenu.innerHTML = `
+            <div class="context-menu-rename-btn">
+              <i class="fas fa-pen" style="margin-right: 8.75px;"></i>Rename
+            </div>
+            <div class="context-menu-delete-btn">
+              <i class="fas fa-trash" style="margin-right: 10.5px;"></i>Delete
+            </div>
+          `;
+
+          contextMenu.style.top = `${e.clientY}px`;
+          contextMenu.style.left = `${e.clientX}px`;
+
+          contextMenu.querySelector(".context-menu-rename-btn").addEventListener("click", () => {
+            const oldFilePath = getFilePath(item);
+
+            const span = newFileTreeItem.querySelector("span");
+            span.style.cursor = "text";
+            span.contentEditable = true;
+            span.focus();
+            span.addEventListener("blur", () => {
+              if (!span.textContent.trim()) return newFileTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFileTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFileTreeItem)
+                ]
+              ]);
+
+              newFileTreeItem.click();
+            });
+
+            span.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter") return;
+
+              if (!span.textContent.trim()) return newFileTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFileTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFileTreeItem)
+                ]
+              ]);
+
+              newFileTreeItem.click();
+            });
+          });
+
+          contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFileTreeItem.dataset.filename || newFileTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+              item.remove();
+
+              socket.emit("newFileSystem", [
+                "delete",
+                [
+                  getFilePath(newFileTreeItem)
+                ]
+              ]);
+            }).catch(() => {});
+          });
+
+          document.body.appendChild(contextMenu);
+
+          window.addEventListener("click", () => {
+            contextMenu.remove();
+          });
+        });
+
+        newFileTreeItem.click();
+      });
+
+      newFileTreeItem.querySelector("span").addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        if (!newFileTreeItem.querySelector("span").textContent.trim()) return newFileTreeItem.remove();
+        if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+        newFileTreeItem.style.removeProperty("cursor");
+        newFileTreeItem.querySelector("i").className = `fas ${(newFileTreeItem.querySelector("span").textContent.endsWith(".json")) ? "fa-file" : "fa-file-code"}`;
+        newFileTreeItem.querySelector("span").contentEditable = false;
+
+        socket.emit("newFileSystem", [
+          "createFile",
+          [
+            getFilePath(newFileTreeItem)
+          ]
+        ]);
+
+        newFileTreeItem.addEventListener("click", () => {
+          const fileItems = editorView.querySelectorAll(".file-tree-item");
+
+          fileItems.forEach((i) => i.classList.remove("active", "active-file"));
+          newFileTreeItem.classList.add("active", "active-file");
+
+          socket.emit("retrieveFileContent", getFilePath(newFileTreeItem));
+        });
+
+        newFileTreeItem.addEventListener("contextmenu", (e) => {
+          if (document.body.querySelector(".file-tree-context-menu")) document.body.querySelector(".file-tree-context-menu").remove();
+
+          const contextMenu = document.createElement("div");
+          contextMenu.className = "file-tree-context-menu";
+
+          contextMenu.innerHTML = `
+            <div class="context-menu-rename-btn">
+              <i class="fas fa-pen" style="margin-right: 8.75px;"></i>Rename
+            </div>
+            <div class="context-menu-delete-btn">
+              <i class="fas fa-trash" style="margin-right: 10.5px;"></i>Delete
+            </div>
+          `;
+
+          contextMenu.style.top = `${e.clientY}px`;
+          contextMenu.style.left = `${e.clientX}px`;
+
+          contextMenu.querySelector(".context-menu-rename-btn").addEventListener("click", () => {
+            const oldFilePath = getFilePath(item);
+
+            const span = newFileTreeItem.querySelector("span");
+            span.style.cursor = "text";
+            span.contentEditable = true;
+            span.focus();
+            span.addEventListener("blur", () => {
+              if (!span.textContent.trim()) return newFileTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFileTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFileTreeItem)
+                ]
+              ]);
+
+              newFileTreeItem.click();
+            });
+
+            span.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter") return;
+
+              if (!span.textContent.trim()) return newFileTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFileTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFileTreeItem)
+                ]
+              ]);
+
+              newFileTreeItem.click();
+            });
+          });
+
+          contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFileTreeItem.dataset.filename || newFileTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+              item.remove();
+
+              socket.emit("newFileSystem", [
+                "delete",
+                [
+                  getFilePath(newFileTreeItem)
+                ]
+              ]);
+            }).catch(() => {});
+          });
+
+          document.body.appendChild(contextMenu);
+
+          window.addEventListener("click", () => {
+            contextMenu.remove();
+          });
+        });
+
+        newFileTreeItem.click();
+      });
+
+      ((document.querySelector(".file-tree-item.active.active-file")) ? document.querySelector(".file-tree-item.active.active-file").parentElement : ((document.querySelector(".file-tree-item.active")) ? document.querySelector(".file-tree-item.active").nextElementSibling : document.querySelector(".file-tree"))).appendChild(newFileTreeItem);
+      newFileTreeItem.querySelector("span").focus();
+    });
+  });
+
+  const addFolderBtn = editorView.querySelector(`.file-explorer-btn[title="New Folder"]`);
+  [
+    ...[
+      addFolderBtn
+    ],
+    ...(editorView.querySelector(".editor-content-missing")) ? [
+      editorView.querySelectorAll(".editor-content-missing button")[0]
+    ] : []
+  ].forEach((button) => {
+    button.addEventListener("click", () => {
+      let newFolderTreeItem = document.createElement("div");
+      newFolderTreeItem.className = "file-tree-item folder";
+      newFolderTreeItem.style.cursor = "text";
+      newFolderTreeItem.innerHTML = `
+        <i class="fas fa-folder"></i>
+        <span contenteditable="true"></span>
+      `;
+
+      let newFolderTreeContent = document.createElement("div");
+      newFolderTreeContent.className = "folder-content";
+      newFolderTreeContent.style.display = "none";
+      newFolderTreeContent.style.paddingLeft = "1rem";
+
+      newFolderTreeItem.querySelector("span").addEventListener("blur", () => {
+        if (!newFolderTreeItem.querySelector("span").textContent.trim()) return newFolderTreeItem.remove();
+        if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+        newFolderTreeItem.style.removeProperty("cursor");
+        newFolderTreeItem.querySelector("span").contentEditable = false;
+
+        socket.emit("newFileSystem", [
+          "createFolder",
+          [
+            getFilePath(newFolderTreeItem)
+          ]
+        ]);
+
+        newFolderTreeItem.addEventListener("click", () => {
+          const fileItems = editorView.querySelectorAll(".file-tree-item");
+
+          fileItems.forEach((i) => i.classList.remove("active"));
+          newFolderTreeItem.classList.add("active");
+
+          newFolderTreeItem.nextElementSibling.style.display = (newFolderTreeItem.nextElementSibling.style.display === "none") ? "block" : "none";
+        });
+
+        newFolderTreeItem.addEventListener("contextmenu", (e) => {
+          if (document.body.querySelector(".file-tree-context-menu")) document.body.querySelector(".file-tree-context-menu").remove();
+
+          const contextMenu = document.createElement("div");
+          contextMenu.className = "file-tree-context-menu";
+
+          contextMenu.innerHTML = `
+            <div class="context-menu-rename-btn">
+              <i class="fas fa-pen" style="margin-right: 8.75px;"></i>Rename
+            </div>
+            <div class="context-menu-delete-btn">
+              <i class="fas fa-trash" style="margin-right: 10.5px;"></i>Delete
+            </div>
+          `;
+
+          contextMenu.style.top = `${e.clientY}px`;
+          contextMenu.style.left = `${e.clientX}px`;
+
+          contextMenu.querySelector(".context-menu-rename-btn").addEventListener("click", () => {
+            const oldFilePath = getFilePath(item);
+
+            const span = newFolderTreeItem.querySelector("span");
+            span.style.cursor = "text";
+            span.contentEditable = true;
+            span.focus();
+            span.addEventListener("blur", () => {
+              if (!span.textContent.trim()) return newFolderTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFolderTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFolderTreeItem)
+                ]
+              ]);
+
+              newFolderTreeItem.click();
+            });
+
+            span.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter") return;
+
+              if (!span.textContent.trim()) return newFolderTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFolderTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFolderTreeItem)
+                ]
+              ]);
+
+              newFolderTreeItem.click();
+            });
+          });
+
+          contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFolderTreeItem.dataset.filename || newFolderTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+              item.remove();
+
+              socket.emit("newFileSystem", [
+                "delete",
+                [
+                  getFilePath(newFolderTreeItem)
+                ]
+              ]);
+            }).catch(() => {});
+          });
+
+          document.body.appendChild(contextMenu);
+
+          window.addEventListener("click", () => {
+            contextMenu.remove();
+          });
+        });
+
+        newFolderTreeItem.click();
+      });
+
+      newFolderTreeItem.querySelector("span").addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        if (!newFolderTreeItem.querySelector("span").textContent.trim()) return newFolderTreeItem.remove();
+        if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+        newFolderTreeItem.style.removeProperty("cursor");
+        newFolderTreeItem.querySelector("span").contentEditable = false;
+
+        socket.emit("newFileSystem", [
+          "createFolder",
+          [
+            getFilePath(newFolderTreeItem)
+          ]
+        ]);
+
+        newFolderTreeItem.addEventListener("click", () => {
+          const fileItems = editorView.querySelectorAll(".file-tree-item");
+
+          fileItems.forEach((i) => i.classList.remove("active"));
+          newFolderTreeItem.classList.add("active");
+
+          newFolderTreeItem.nextElementSibling.style.display = (newFolderTreeItem.nextElementSibling.style.display === "none") ? "block" : "none";
+        });
+
+        newFolderTreeItem.addEventListener("contextmenu", (e) => {
+          if (document.body.querySelector(".file-tree-context-menu")) document.body.querySelector(".file-tree-context-menu").remove();
+
+          const contextMenu = document.createElement("div");
+          contextMenu.className = "file-tree-context-menu";
+
+          contextMenu.innerHTML = `
+            <div class="context-menu-rename-btn">
+              <i class="fas fa-pen" style="margin-right: 8.75px;"></i>Rename
+            </div>
+            <div class="context-menu-delete-btn">
+              <i class="fas fa-trash" style="margin-right: 10.5px;"></i>Delete
+            </div>
+          `;
+
+          contextMenu.style.top = `${e.clientY}px`;
+          contextMenu.style.left = `${e.clientX}px`;
+
+          contextMenu.querySelector(".context-menu-rename-btn").addEventListener("click", () => {
+            const oldFilePath = getFilePath(item);
+
+            const span = newFolderTreeItem.querySelector("span");
+            span.style.cursor = "text";
+            span.contentEditable = true;
+            span.focus();
+            span.addEventListener("blur", () => {
+              if (!span.textContent.trim()) return newFolderTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFolderTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFolderTreeItem)
+                ]
+              ]);
+
+              newFolderTreeItem.click();
+            });
+
+            span.addEventListener("keydown", (e) => {
+              if (e.key !== "Enter") return;
+
+              if (!span.textContent.trim()) return newFolderTreeItem.remove();
+              if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+              span.style.cursor = "pointer";
+              span.contentEditable = false;
+              newFolderTreeItem.dataset.filename = span.textContent.trim();
+              socket.emit("newFileSystem", [
+                "rename",
+                [
+                  oldFilePath,
+                  getFilePath(newFolderTreeItem)
+                ]
+              ]);
+
+              newFolderTreeItem.click();
+            });
+          });
+
+          contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFolderTreeItem.dataset.filename || newFolderTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+              item.remove();
+
+              socket.emit("newFileSystem", [
+                "delete",
+                [
+                getFilePath(newFolderTreeItem)
+                ]
+              ]);
+            }).catch(() => {});
+          });
+
+          document.body.appendChild(contextMenu);
+
+          window.addEventListener("click", () => {
+            contextMenu.remove();
+          });
+        });
+
+        newFolderTreeItem.click();
+      });
+
+      ((document.querySelector(".file-tree-item.active.active-file")) ? document.querySelector(".file-tree-item.active.active-file").parentElement : ((document.querySelector(".file-tree-item.active")) ? document.querySelector(".file-tree-item.active").nextElementSibling : document.querySelector(".file-tree"))).appendChild(newFolderTreeItem);
+      ((document.querySelector(".file-tree-item.active.active-file")) ? document.querySelector(".file-tree-item.active.active-file").parentElement : ((document.querySelector(".file-tree-item.active")) ? document.querySelector(".file-tree-item.active").nextElementSibling : document.querySelector(".file-tree"))).appendChild(newFolderTreeContent);
+      newFolderTreeItem.querySelector("span").focus();
+    });
+  });
+
+  setupFileTreeListeners(editorView);
+  getFileTreeItem(editorView, fileName).classList.add("active", "active-file");
+
+  editor = CodeMirror.fromTextArea(editorView.querySelector("textarea"), {
+    mode: "javascript",
+    theme: "monokai",
+    styleActiveLine: true,
+    lineNumbers: true,
+    matchBrackets: true,
+    autoCloseBrackets: true,
+    autoCloseTags: true
+  });
+
+  editor.on("change", (_, change) => {
+    if (change.origin !== "+input") return;
+
+    socket.emit("newFileContent", [
+      getFilePath(editorView.querySelector(".file-tree .file-tree-item.active-file")),
+      editor.getValue()
+    ]);
+  });
+
+  socket.on("newFileSystem", (newFileSystem) => {
+    const activeItem = getFilePath(editorView.querySelector(".file-tree-item.active")) || "";
+    const activeFile = getFilePath(editorView.querySelector(".file-tree-item.active-file")) || "";
+    const newFile = newFileSystem.filter((file) => !parseFileTree(editorView.querySelector(".file-tree")).includes(file))[0]?.slice(2) || "";
+
+    editorView.querySelector(".file-tree").innerHTML = renderFileTree(generateFileTree(newFileSystem));
+
+    (getFileTreeItem(editorView, activeItem) || getFileTreeItem(editorView, activeFile) || getFileTreeItem(editorView, newFile) || getFileTreeItem(editorView, ((dir) => {
+      const files = dir.map((file) => file.substring(2));
+      if (files.includes("index.js")) return "index.js";
+      if (files.includes("package.json")) return "package.json";
+      const firstJsFile = files.find((file) => file.endsWith(".js"));
+      if (firstJsFile) return firstJsFile;
+      const firstNonFolder = files.find((file) => file.split("/") === 1);
+      if (firstNonFolder) return firstNonFolder;
+      const firstFile = files[0];
+      if (firstFile) return firstFile;
+      return null;
+    })(newFileSystem))).classList.add(...[
+      ...[
+        "active"
+      ],
+      ...(activeItem !== activeFile) ? [] : [
+        "active-file"
+      ]
+    ]);
+
+    setupFileTreeListeners(editorView);
+  });
+
+  socket.on("retrieveFileContent", ([newFileName, newFileContent]) => {
+    getFileTreeItem(editorView, newFileName).classList.add("active", "active-file");
+
+    editor.setValue(newFileContent);
+    editor.clearHistory();
+  });
+
+  socket.on("newFileContent", ([newFileName, newFileContent]) => {
+    if ((newFileName !== getFilePath(editorView.querySelector(".file-tree-item.active-file"))) || (newFileContent === editor.getValue())) return;
+
+    editor.setValue(newFileContent);
+    editor.clearHistory();
+  });
+});
+
+socket.on("newLink", () => {
+  socket.disconnect();
+  window.location.href = "/";
+});
+
+socket.on("disconnect", () => {
+  window.location.href = "/";
+});
+
+function setupFileTreeListeners(editorView) {
+  const fileItems = editorView.querySelectorAll(".file-tree-item");
+
+  fileItems.forEach((item) => {
+    item.addEventListener("click", () => {
+      if (item.classList.contains("folder")) {
+        fileItems.forEach((i) => i.classList.remove("active"));
+        item.classList.add("active");
+
+        item.nextElementSibling.style.display = (item.nextElementSibling.style.display === "none") ? "block" : "none";
+      } else {
+        editorView.querySelectorAll(".file-tree-item").forEach((i) => i.classList.remove("active", "active-file"));
+        item.classList.add("active", "active-file");
+
+        socket.emit("retrieveFileContent", getFilePath(item));
+      };
+    });
+
+    item.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+
+      if (document.body.querySelector(".file-tree-context-menu")) document.body.querySelector(".file-tree-context-menu").remove();
+
+      const contextMenu = document.createElement("div");
+      contextMenu.className = "file-tree-context-menu";
+
+      contextMenu.innerHTML = `
+        <div class="context-menu-rename-btn">
+          <i class="fas fa-pen" style="margin-right: 8.75px;"></i>Rename
+        </div>
+        <div class="context-menu-delete-btn">
+          <i class="fas fa-trash" style="margin-right: 10.5px;"></i>Delete
+        </div>
+      `;
+
+      contextMenu.style.top = `${e.clientY}px`;
+      contextMenu.style.left = `${e.clientX}px`;
+
+      contextMenu.querySelector(".context-menu-rename-btn").addEventListener("click", () => {
+        const oldFilePath = getFilePath(item);
+
+        const span = item.querySelector("span");
+        span.style.cursor = "text";
+        span.contentEditable = true;
+        span.focus();
+        span.addEventListener("blur", () => {
+          if (!span.textContent.trim()) return item.remove();
+          if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+          span.style.cursor = "pointer";
+          span.contentEditable = false;
+          item.dataset.filename = span.textContent.trim();
+          socket.emit("newFileSystem", [
+            "rename",
+            [
+              oldFilePath,
+              getFilePath(item)
+            ]
+          ]);
+
+          item.click();
+        });
+
+        span.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+
+          if (!span.textContent.trim()) return item.remove();
+          if (editorView.querySelector(".editor-content-missing")) editorView.querySelector(".editor-content-missing").remove();
+
+          span.style.cursor = "pointer";
+          span.contentEditable = false;
+          item.dataset.filename = span.textContent.trim();
+          socket.emit("newFileSystem", [
+            "rename",
+            [
+              oldFilePath,
+              getFilePath(item)
+            ]
+          ]);
+
+          item.click();
+        });
+      });
+
+      contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
+        confirm("Delete File", `Are you sure you want to delete ${escapeHtml(item.dataset.filename || item.querySelector("span").textContent.trim())}?`).then(() => {
+          item.remove();
+
+          socket.emit("newFileSystem", [
+            "delete",
+            [
+              getFilePath(item)
+            ]
+          ]);
+        }).catch(() => {});
+      });
+
+      document.body.appendChild(contextMenu);
+
+      window.addEventListener("click", () => {
+        contextMenu.remove();
+      });
+    });
+  });
+};
+
+function generateFileTree(paths) {
+  const result = [];
+
+  for (const filePath of paths) {
+    const parts = filePath.replace(/^\.\//, "").split("/");
+    let currentLevel = result;
+
+    parts.forEach((part, index) => {
+      const existing = currentLevel.find((item) => item.name === part);
+
+      if (index === parts.length - 1) {
+        if (!existing) {
+          currentLevel.push({
+            name: part,
+            type: "file"
+          });
+        };
+      } else {
+        if (!existing) {
+          const newFolder = {
+            name: part,
+            type: "folder",
+            files: []
+          };
+          currentLevel.push(newFolder);
+          currentLevel = newFolder.files;
+        } else {
+          currentLevel = existing.files;
+        };
+      };
+    });
+  };
+
+  return result;
+};
+
+function renderFileTree(files) {
+  return files.map((file) => {
+    if (file.type === "folder") {
+      return `
+        <div class="file-tree-item folder">
+          <i class="fas fa-folder"></i>
+          <span>${escapeHtml(file.name)}</span>
+        </div>
+        <div class="folder-content" style="display: none; padding-left: 1rem;">
+          ${renderFileTree(file.files)}
+        </div>
+      `;
+    } else {
+      const icon = (file.name.endsWith(".json")) ? "fa-file" : "fa-file-code";
+      return `
+        <div class="file-tree-item" data-filename="${escapeHtml(file.name)}">
+          <i class="fas ${icon}"></i>
+          <span>${escapeHtml(file.name.substring(0, file.name.length))}</span>
+        </div>
+      `;
+    };
+  }).join("");
+};
+
+function getFileTreeItem(view, path) {
+  let parts = path.split("/");
+  let container = view.querySelector(".file-tree") || view.querySelector(".help-tree");
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    let foundItem = null;
+
+    const items = Array.from(container.children).filter((el) => el.classList.contains("file-tree-item"));
+    for (const item of items) {
+      const span = item.querySelector("span");
+      if (span && ((span.textContent.trim() === part) || (span.parentElement?.dataset?.filename?.trim() === part))) {
+        foundItem = item;
+        break;
+      };
+    };
+
+    if (!foundItem) return null;
+
+    if (i === parts.length - 1) {
+      return foundItem;
+    } else {
+      const next = foundItem.nextElementSibling;
+      if (!next || !next.classList.contains("folder-content")) {
+        return null;
+      };
+      container = next;
+    };
+  };
+
+  return null;
+};
+
+function getFilePath(fileItem) {
+  let path = [];
+
+  while (fileItem && !fileItem.classList.contains("file-tree")) {
+    if (fileItem.classList.contains("file-tree-item")) {
+      let span = fileItem.querySelector("span");
+      if (span) {
+        path.unshift(fileItem.dataset.filename || span.textContent.trim());
+      };
+    };
+
+    if (fileItem.parentElement && fileItem.parentElement.classList.contains("folder-content")) {
+      fileItem = fileItem.parentElement.previousElementSibling;
+    } else {
+      fileItem = fileItem.parentElement;
+    };
+  };
+
+  return path.join("/");
+};
+
+function parseFileTree(fileTree) {
+  const result = [];
+  const stack = [{ node: fileTree, path: "." }];
+
+  while (stack.length > 0) {
+    const { node, path } = stack.pop();
+
+    for (let i = 0; i < node.children.length; i++) {
+      const el = node.children[i];
+
+      if (el.classList.contains("file-tree-item") && el.classList.contains("folder")) {
+        const folderName = el.querySelector("span").textContent.trim();
+        const folderPath = `${path}/${folderName}`;
+
+        result.push(folderPath);
+
+        const next = el.nextElementSibling;
+        if (next && next.classList.contains("folder-content")) {
+          stack.push({ node: next, path: folderPath });
+        };
+      } else if (el.classList.contains("file-tree-item") && el.dataset.filename) {
+        result.push(`${path}/${el.dataset.filename}`);
+      };
+    };
+  };
+
+  return result;
+};
+
+function showDownloadModal() {
+  const modal = document.createElement("div");
+  modal.className = "modal";
+
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>✨ Become a LocalBotify User! ✨</h2>
+        <button class="close-btn"><i class="fas fa-times"></i></button>
       </div>
-
-      <button class="workspace-close-btn">
-        <i class="fas fa-times"></i>
-      </button>
-
-      <div class="workbench-view">
-        <div id="workbenchMainView" style="animation: slideUp 0.5s ease;">
-          <div class="bot-header" style="margin-bottom: 1.65rem;">
-            <div class="bot-avatar" style="width: 60px; height: 60px; font-size: ${(
-              50 -
-              ((this.isEmoji(bot.avatar)
-                ? this.escapeHtml(bot.avatar)
-                : "🤖") ===
-                "🤖") *
-                2.5
-            ).toString()}px;">${
-  this.isEmoji(bot.avatar) ? this.escapeHtml(bot.avatar) : "🤖"
-}</div>
-            <div class="bot-info" style="margin-top: 2px; margin-left: -${(
-              8.5 +
-              ((this.isEmoji(bot.avatar)
-                ? this.escapeHtml(bot.avatar)
-                : "🤖") ===
-                "🤖") *
-                0.75
-            ).toString()}px;">
-              <h3 style="font-size: 1.5rem; margin-left: 2.5px;">${this.escapeHtml(
-                bot.name
-              )}</h3>
-              <p style="font-size: 0.95rem; margin-left: 2.5px; margin-top: -2.5px;">${
-                bot.description ? this.escapeHtml(bot.description) : ""
-              }</p>
-            </div>
-            <div style="
-              position: absolute;
-              right: 4rem;
-              display: flex;
-            ">
-              <button id="workbench-play-btn" class="workbench-action-btn" style="margin-right: 7.5px;">
-                ${
-                  ((
-                    this.readFileSafelySync(
-                      path.join(
-                        process.cwd(),
-                        "bots",
-                        bot.id.toString(),
-                        "channels/process.txt"
-                      )
-                    ) || "OFFLINE"
-                  ).trim() || "OFFLINE") === "OFFLINE"
-                    ? `<i class="fas fa-play"></i>Run`
-                    : `<i class="fas fa-stop"></i>Stop`
-                }
-              </button>
-              <button id="workbench-publish-btn" class="workbench-action-btn" style="padding: 0.5rem 0.65rem; margin-right: 7.25px;">
-                <i class="fas fa-upload"></i>
-              </button>
-              <button id="workbench-settings-btn" class="workbench-action-btn" style="padding: 0.5rem 0.65rem;">
-                <i class="fas fa-cog"></i>
-              </button>
-            </div>
+      <div class="modal-body">
+        <form id="upgradeForm">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <p style="margin-bottom: 0.5rem;">Looks like you're using the LocalBotify editor session of someone else. 👀</p>
+            <p style="text-decoration: underline; color: #ffb100de;">Downloading is entirely free!</p>
           </div>
-          <div class="setting-item" style="margin-bottom: 0.85rem;">
-            <label data-tooltip="Enable classic !commands and modern /commands with autocomplete">
-              <span>Prefix</span>
-              <input type="text" id="botPrefix" placeholder="Enter prefix..." value="${this.escapeHtml(
-                configFile.prefix
-              )}" style="width: ${(
-  2.75 +
-  (configFile.prefix.length - 1) * 0.5
-).toString()}rem; text-align: center;">
-              <span style="margin-left: 0.75rem;">Slash Commands</span>
-              <input type="checkbox" id="slashCommands"${
-                configFile.slashCommands ? " checked" : ""
-              }>
-            </label>
-            <div class="setting-description">
-              Personalize how your bot talks
-            </div>
+          <div class="form-actions" style="margin-top: 0;">
+            <button type="submit" class="submit-btn">
+              Get Started
+            </button>
+            <button type="button" class="cancel-btn">Cancel</button>
           </div>
-          <div class="setting-item" style="margin-bottom: 0.85rem;">
-            <label data-tooltip="Choose the status for your bot">
-              <span>Bot Status</span>
-              <select id="botStatusSymbol" style="width: fit-content; border-top-right-radius: 0; border-bottom-right-radius: 0;">
-                <option value="Online" ${
-                  (configFile.status[0] || "Online") === "Online"
-                    ? "selected"
-                    : ""
-                }>🟢</option>
-                <option value="Idle" ${
-                  (configFile.status[0] || "Online") === "Idle"
-                    ? "selected"
-                    : ""
-                }>🌙</option>
-                <option value="DoNotDisturb" ${
-                  (configFile.status[0] || "Online") === "DoNotDisturb"
-                    ? "selected"
-                    : ""
-                }>🔴</option>
-                <option value="Invisible" ${
-                  (configFile.status[0] || "Online") === "Invisible"
-                    ? "selected"
-                    : ""
-                }>🔘</option>
-              </select>
-              <select id="botStatusActivity" style="width: fit-content; border-radius: 0; margin-left: -0.75rem;">
-                <option value="Playing" ${
-                  (configFile.status[1] || "Playing") === "Playing"
-                    ? "selected"
-                    : ""
-                }>Playing</option>
-                <option value="Watching" ${
-                  (configFile.status[1] || "Playing") === "Watching"
-                    ? "selected"
-                    : ""
-                }>Watching</option>
-                <option value="Listening" ${
-                  (configFile.status[1] || "Playing") === "Listening"
-                    ? "selected"
-                    : ""
-                }>Listening</option>
-                <option value="Competing" ${
-                  (configFile.status[1] || "Playing") === "Competing"
-                    ? "selected"
-                    : ""
-                }>Competing</option>
-                <option value="Streaming" ${
-                  (configFile.status[1] || "Playing") === "Streaming"
-                    ? "selected"
-                    : ""
-                }>Streaming</option>
-                <option value="Custom" ${
-                  (configFile.status[1] || "Playing") === "Custom"
-                    ? "selected"
-                    : ""
-                }>Custom</option>
-              </select>
-              <input type="text" id="botStatusMessage" placeholder="Enter status..." value="${this.escapeHtml(
-                configFile.status[2] || ""
-              )}" style="width: 14rem; margin-left: -0.75rem; border-top-left-radius: 0; border-bottom-left-radius: 0;" />
-            </label>
-            <div class="setting-description">
-              Give your bot a personality
-            </div>
-          </div>
-          <div class="setting-item" style="margin-bottom: 0.85rem;">
-            <label data-tooltip="Show yourself using the footer">
-              <span>Bot Embed Footer</span>
-              <input type="text" id="botFooter" placeholder="Enter footer..."  value="${this.escapeHtml(
-                configFile.footer || ""
-              )}" style="width: 14rem;" />
-            </label>
-            <div class="setting-description">
-              Customize your bot embed footer
-            </div>
-          </div>
-          <div class="workbench-section settings-section" style="
-            padding: 1.5rem 2rem;
-            margin-top: 1.75rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: var(--radius-md);
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
-            box-shadow: none;
-          ">
-            <h3 style="flex-direction: row; margin-bottom: 1rem;">
-              <i class="fas fa-code"></i>Commands
-              <button class="add-command-btn" style="right: 25px;">
-                <i class="fas fa-plus"></i>
-                Add Command
-              </button>
-            </h3>
-            ${
-              !fs.readdirSync(
-                path.join(process.cwd(), "bots", bot.id.toString(), "commands")
-              ).length
-                ? `<span style="color: grey;">No commands found</span>`
-                : fs
-                    .readdirSync(
-                      path.join(
-                        process.cwd(),
-                        "bots",
-                        bot.id.toString(),
-                        "commands"
-                      )
-                    )
-                    .map((command) =>
-                      command.endsWith(".js")
-                        ? `
-              <div class="setting-item" style="width: calc(100% + 12.5px); margin-left: -2.5px; margin-bottom: 0.5rem; padding: 0.5rem 1rem; cursor: pointer;" data-category="commands">${this.escapeHtml(
-                command.substring(0, command.length - 3)
-              )}</div>
-            `
-                        : ""
-                    )
-                    .join("")
-            }
-            <h3 style="flex-direction: row; margin-bottom: 1rem; margin-top: 2rem;">
-              <i class="fas fa-calendar-days"></i>Events
-              <button class="add-command-btn" style="right: 25px;">
-                <i class="fas fa-plus"></i>
-                Add Event
-              </button>
-            </h3>
-            ${
-              !fs.readdirSync(
-                path.join(process.cwd(), "bots", bot.id.toString(), "events")
-              ).length
-                ? `<span style="color: grey;">No events found</span>`
-                : fs
-                    .readdirSync(
-                      path.join(
-                        process.cwd(),
-                        "bots",
-                        bot.id.toString(),
-                        "events"
-                      )
-                    )
-                    .map((command) =>
-                      command.endsWith(".js")
-                        ? `
-              <div class="setting-item" style="width: calc(100% + 12.5px); margin-left: -2.5px; margin-bottom: 0.5rem; padding: 0.5rem 1rem; cursor: pointer;" data-category="events">${
-                this.escapeHtml(
-                  command
-                    .substring(0, command.length - 3)
-                    .replace(/[^a-zA-Z]+$/, "")
-                ) +
-                (command.substring(0, command.length - 3).match(/[^a-zA-Z]+$/)
-                  ? `<code style="background: #242323b0; font-family: monospace; padding: 0.2rem 0.4rem; margin-left: 7.5px; border-radius: var(--radius-sm); position: fixed; height: 23.25px;">${command
-                      .substring(0, command.length - 3)
-                      .match(/[^a-zA-Z]+$/)}</code>`
-                  : "")
-              }</div>
-            `
-                        : ""
-                    )
-                    .join("")
-            }
-          </div>
-        </div>
-
-        <div id="workbenchEditorView" style="display: none; animation: slideUp 0.5s ease;"></div>
+        </form>
       </div>
+    </div>
+  `;
 
-      <div class="code-editor-view" style="visibility: hidden;">
-        <div class="file-explorer">
-          <div class="file-explorer-header">
-            <span class="file-explorer-title">Files</span>
-            <div class="file-explorer-actions">
-              <button class="file-explorer-btn" title="New File">
-                <i class="fas fa-plus"></i>
-              </button>
-              <button class="file-explorer-btn" title="New Folder">
-                <i class="fas fa-folder-plus"></i>
-              </button>
-            </div>
-          </div>
-          <div class="file-tree">
-            ${this.renderFileTree(
-              this.generateFileTree(
-                path.join(process.cwd(), "bots", bot.id.toString())
-              )
-            )}
-          </div>
-        </div>
+  document.body.appendChild(modal);
+  setTimeout(() => modal.classList.add("show"), 10);
 
-        <div class="editor-container">
-          <button class="editor-play-btn">
-            <i class="${
-              ((
-                this.readFileSafelySync(
-                  path.join(
-                    process.cwd(),
-                    "bots",
-                    bot.id.toString(),
-                    "channels/process.txt"
-                  )
-                ) || "OFFLINE"
-              ).trim() || "OFFLINE") === "OFFLINE"
-                ? "fas fa-play"
-                : "fas fa-stop"
-            }"></i>
-          </button>
-          <div class="editor-content">
-            <textarea spellcheck="false">${
-              fs
-                .readdirSync(
-                  path.join(process.cwd(), "bots", bot.id.toString())
-                )
-                .find(
-                  (file) =>
-                    !fs
-                      .statSync(
-                        path.join(
-                          process.cwd(),
-                          "bots",
-                          bot.id.toString(),
-                          file
-                        )
-                      )
-                      .isDirectory()
-                )
-                ? this.escapeHtml(
-                    fs.readFileSync(
-                      path.join(
-                        process.cwd(),
-                        "bots",
-                        bot.id.toString(),
-                        ((dir) => {
-                          const files = fs.readdirSync(dir);
-                          if (files.includes("index.js")) return "index.js";
-                          if (files.includes("package.json")) {
-                            try {
-                              const packageJson = JSON.parse(
-                                fs.readFileSync(
-                                  path.join(dir, "package.json"),
-                                  "utf8"
-                                )
-                              );
-                              if (
-                                packageJson.main &&
-                                fs.existsSync(path.join(dir, packageJson.main))
-                              )
-                                return packageJson.main;
-                              return "package.json";
-                            } catch {
-                              return "package.json";
-                            }
-                          }
-                          const firstJsFile = files.find((file) =>
-                            file.endsWith(".js")
-                          );
-                          if (firstJsFile) return firstJsFile;
-                          const firstNonFolder = files.find(
-                            (file) =>
-                              !fs.statSync(path.join(dir, file)).isDirectory()
-                          );
-                          if (firstNonFolder) return firstNonFolder;
-                          const firstFile = this.getFlatFileList(dir).find(
-                            (file) =>
-                              !fs
-                                .statSync(path.join(dir, file.substring(2)))
-                                .isDirectory()
-                          );
-                          if (firstFile) return firstFile.substring(2);
-                          return null;
-                        })(path.join(process.cwd(), "bots", bot.id.toString()))
-                      ),
-                      "utf8"
-                    )
-                  )
-                : ""
-            }</textarea>
-            ${
-              !fs
-                .readdirSync(
-                  path.join(process.cwd(), "bots", bot.id.toString())
-                )
-                .find(
-                  (file) =>
-                    !fs
-                      .statSync(
-                        path.join(
-                          process.cwd(),
-                          "bots",
-                          bot.id.toString(),
-                          file
-                        )
-                      )
-                      .isDirectory()
-                )
-                ? `
-              <div class="editor-content-missing">
-                <h2>No file found</h2>
-                <div>
-                  <button>
-                    <i class="fas fa-plus"></i>
-                    New File
-                  </button>
-                  <button>
-                    <i class="fas fa-plus"></i>
-                    New Folder
-                  </button>
-                </div>
-              </div>
-            `
-                : ""
-            }
-          </div>
-        </div>
+  const closeModal = () => {
+    modal.classList.remove("show");
+    setTimeout(() => modal.remove(), 300);
 
-        <div class="editor-terminal"></div>
+    const workspaceView = document.querySelector(".workspace-view");
+
+    Array.from(workspaceView.querySelectorAll(".workspace-tabs button")).find((tab) => tab.querySelector("i").className === "fas fa-tools").classList.remove("active");
+    Array.from(workspaceView.querySelectorAll(".workspace-tabs button")).find((tab) => tab.classList.contains("currentView")).classList.add("active");
+  };
+
+  modal.querySelector(".close-btn").addEventListener("click", closeModal);
+  modal.querySelector(".cancel-btn").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  const form = modal.querySelector("#upgradeForm");
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    closeModal();
+
+    const link = document.createElement("a");
+    link.href = `${window.location.origin}/#download`;
+    link.target = "_blank";
+
+    link.click();
+  });
+};
+
+function showUpgradeModal() {
+  const modal = document.createElement("div");
+  modal.className = "modal";
+
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>✨ Become a LocalBotify Pro User! ✨</h2>
+        <button class="close-btn"><i class="fas fa-times"></i></button>
       </div>
+      <div class="modal-body">
+        <form id="upgradeForm">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <p style="margin-bottom: 0.5rem;">Looks like you tried to access a LocalBotify Pro feature. 👀</p>
+            <p style="text-decoration: underline; color: #ffb100de;">Upgrading only costs 5$ / month!</p>
+          </div>
+          <div class="form-actions" style="margin-top: 0;">
+            <button type="submit" class="submit-btn">
+              Upgrade Now
+            </button>
+            <button type="button" class="cancel-btn">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
 
-      <div class="workbench-view suite-view">
-        <div id="suiteMainView">
-          <div id="assistantSection" class="workbench-section settings-section" style="
-            padding: 1.5rem 2rem;
-            margin-top: 1.75rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: var(--radius-md);
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
-            box-shadow: none;
-            overflow-x: auto;
-            overflow-y: hidden;
-          ">
-            <h3 style="flex-direction: row; margin-bottom: 1rem;">
-              <i class="fas fa-robot"></i>AI Assistant
-            </h3>
-            <div class="command-item setting-item" style="padding: 0; background-color: transparent;">
-              <form>
-                <div style="display: flex; flex-direction: row;">
-                  <select style="margin-top: 0.35rem; margin-bottom: 0.5rem; margin-right: 0.625rem; min-height: 3.15rem; font-family: system-ui; background-color: #00000030; resize: vertical; cursor: pointer;">
-                    <option style="background-color: #151618;" selected>Command</option>
-                    <option style="background-color: #151618;">Event</option>
-                  </select>
-                  <input style="margin-top: 0.35rem; margin-bottom: 0.5rem; min-height: 3.15rem; font-family: system-ui; background-color: #00000030; resize: vertical;" placeholder="Enter command name..." required>
-                </div>
-                <textarea style="height: 150px; margin-top: 0.25rem; min-height: 3.15rem; font-family: system-ui; background-color: #00000030; resize: vertical;" placeholder="Enter prompt..."></textarea>
-                <button type="submit" style="margin-top: 0.5rem; margin-bottom: 0.375rem; background-color: #b7841d; resize: vertical; cursor: pointer; font-family: cursive; height: 2.55rem; display: flex; justify-content: center; align-items: center; font-size: 15px; box-shadow: 0 4px 10px rgb(255 215 0 / 16%);" placeholder="Enter prompt...">
-                  <span style="margin-bottom: 2.25px;">Generate <span style="margin-left: 2.5px;">🪄</span></span>
-                </button>
-              </form>
-            </div>
-          </div>
-          <div id="analyticsSection" class="workbench-section settings-section" style="
-            padding: 1.5rem 2rem;
-            padding-bottom: 4.75rem;
-            margin-top: 1.75rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: var(--radius-md);
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
-            box-shadow: none;
-            height: 44.25vh;
-            overflow-x: auto;
-            overflow-y: hidden;
-          ">
-            <h3 style="flex-direction: row; margin-bottom: 1rem;">
-              <i class="fas fa-chart-simple"></i>Analytics
-            </h3>
-            <div style="display: flex; flex-direction: row; height: calc(44.25vh - 7rem);">
-              <canvas id="analyticsChart"></canvas>
-              <canvas id="commandsChart" style="margin-top: -2.25rem; margin-left: 3.5rem; opacity: 0.8;"></canvas>
-              <canvas id="eventsChart" style="margin-top: -2.25rem; margin-left: 1.75rem; opacity: 0.8;"></canvas>
-            </div>
-          </div>
-          <div id="landingPageSection" class="workbench-section settings-section" style="
-            padding: 1.5rem 2rem 2rem;
-            margin-top: 1.75rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: var(--radius-md);
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
-            box-shadow: none;
-          ">
-            <h3 style="flex-direction: row; margin-bottom: 1rem;">
-              <i class="fas fa-laptop-code"></i>Landing Page
-              <button class="add-command-btn" style="right: 117.5px;">
-                <i class="fas fa-plus"></i>
-                Add Feature
-              </button>
-              <button class="add-command-btn" style="right: 74.7px; padding: 0.55rem 0.65rem;">
-                <i class="fas fa-upload"></i>
-              </button>
-              <button class="add-command-btn" style="right: 32.5px; padding: 0.55rem 0.65rem;">
-                <i class="fas fa-arrow-up-right-from-square"></i>
-              </button>
-            </h3>
-            <div class="grid-container">
-              ${
-                !(bot.features || []).length
-                  ? `<span style="color: grey; margin-bottom: -0.5rem;">No features found</span>`
-                  : (bot.features || [])
-                      .map(
-                        (feature) => `
-                  <div class="card" data-id="${this.escapeHtml(
-                    feature.id.toString()
-                  )}">
-                    <i class="fas fa-xmark" style="
-                      float: right;
-                      cursor: pointer;
-                      opacity: 0.85;
-                    "></i>
-                    <div class="icon">
-                      <i class="fas fa-${this.escapeHtml(feature.icon)}"></i>
-                    </div>
-                    <p class="title" contenteditable spellcheck="false" placeholder="Enter title...">${this.escapeHtml(
-                      feature.name
-                    )}</p>
-                    <p class="description" contenteditable spellcheck="false" placeholder="Enter description...">${this.escapeHtml(
-                      feature.description
-                    )}</p>
-                  </div>
-                `
-                      )
-                      .join("\n")
-              }
-            </div>
-          </div>
-          <div id="vanityLinksSection" class="workbench-section settings-section" style="
-            padding: 1.5rem 2rem;
-            margin-top: 1.75rem;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: var(--radius-md);
-            transition: all 0.3s ease;
-            border: 1px solid transparent;
-            box-shadow: none;
-          ">
-            <h3 style="flex-direction: row; margin-bottom: 1rem;">
-              <i class="fas fa-link"></i>Vanity Links
-              <button class="add-command-btn" style="right: 25px;">
-                <i class="fas fa-plus"></i>
-                Create Vanity Link
-              </button>
-            </h3>
-            ${
-              !bot?.vanityLinks?.length
-                ? `<span style="color: grey;">No vanity links found</span>`
-                : bot?.vanityLinks
-                    ?.map(
-                      (shortenedUrl) => `
-              <div class="setting-item" style="width: calc(100% + 12.5px); margin-left: -2.5px; margin-bottom: 0.5rem; padding: 0.5rem 1rem; cursor: pointer;">${this.escapeHtml(
-                shortenedUrl
-              )}</div>
-            `
-                    )
-                    .join("")
-            }
-          </div>
+  document.body.appendChild(modal);
+  setTimeout(() => modal.classList.add("show"), 10);
+
+  const closeModal = () => {
+    modal.classList.remove("show");
+    setTimeout(() => modal.remove(), 300);
+
+    const workspaceView = document.querySelector(".workspace-view");
+
+    Array.from(workspaceView.querySelectorAll(".workspace-tabs button")).find((tab) => tab.querySelector("i").className === "fas fa-trophy").classList.remove("active");
+    Array.from(workspaceView.querySelectorAll(".workspace-tabs button")).find((tab) => tab.classList.contains("currentView")).classList.add("active");
+  };
+
+  modal.querySelector(".close-btn").addEventListener("click", closeModal);
+  modal.querySelector(".cancel-btn").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  const form = modal.querySelector("#upgradeForm");
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    closeModal();
+
+    const link = document.createElement("a");
+    link.href = `${window.location.origin}/#pricing`;
+    link.target = "_blank";
+
+    link.click();
+  });
+};
+
+function confirm(title, message = "", mode, buttonText) {
+  return new Promise((resolve, reject) => {
+    const modal = document.createElement("div");
+    modal.className = "modal";
+
+    modal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>${escapeHtml(title)}</h2>
+          <button class="close-btn"><i class="fas fa-times"></i></button>
         </div>
-
-        <div id="suiteDetailView" style="display: none;"></div>
+        <div class="modal-body">
+          <form id="botForm">
+            <div class="form-group">
+              ${message.split("\n").map((line) => `<p>${escapeHtml(line)}</p>`).join("\n")}
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="submit-btn${(mode === "dangerous") ? ` submit-report-btn" style="background-color: var(--discord-red);"` : `"`}>
+                ${escapeHtml(buttonText || title)}
+              </button>
+              <button type="button" class="cancel-btn">Cancel</button>
+            </div>
+          </form>
+        </div>
       </div>
     `;
+
+    document.body.appendChild(modal);
+    setTimeout(() => modal.classList.add("show"), 10);
+
+    const closeModal = () => {
+      modal.classList.remove("show");
+      setTimeout(() => modal.remove(), 300);
+      reject();
+    };
+
+    modal.querySelector(".close-btn").addEventListener("click", closeModal);
+    modal.querySelector(".cancel-btn").addEventListener("click", closeModal);
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    const form = modal.querySelector("#botForm");
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      modal.classList.remove("show");
+      setTimeout(() => modal.remove(), 300);
+      resolve();
+    });
+  });
+};
+
+function escapeHtml(unsafe) {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/"/g, "&#039;");
+};

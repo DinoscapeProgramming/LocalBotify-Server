@@ -320,7 +320,7 @@ body {
 }
 
 ::-webkit-scrollbar-corner {
-  background-color: transparent;
+  background-color: var(--discord-dark);
 }
 
 @keyframes slideIn {
@@ -1036,27 +1036,24 @@ body {
 
 .workspace-close-btn {
   position: absolute;
-  top: 0.5rem;
-  right: calc(0.5rem - 4px);
-  transform: translate(0.25px, -5px);
+  top: 0;
+  right: 0;
   background: none;
   border: none;
-  color: var(--discord-text);
+  color: var(
+  --discord-text);
   cursor: pointer;
-  margin-top: 2.5px;
-  margin-right: 2.5px;
-  padding: 4.5px 6.5px;
-  border-radius: var(--radius-sm);
   transition: all 0.2s ease;
   z-index: 5;
+  padding: 5.75px 5px;
 }
 
 .workspace-close-btn:hover {
   background-color: var(--discord-hover);
 }
 
-.workspace-close-btn i {
-  transform: translate(0.75px, 1px);
+.workspace-close-btn img {
+  width: calc(2rem - 7.5px);
 }
 
 .workbench-view {
@@ -1190,7 +1187,6 @@ body {
   z-index: 1000;
   display: grid;
   grid-template-columns: 240px 1fr;
-  grid-template-rows: 1fr 200px;
 }
 
 .file-explorer {
@@ -1198,7 +1194,6 @@ body {
   border-right: 1px solid var(--discord-darker);
   padding: 1rem;
   overflow-y: auto;
-  height: calc(100% - 24px);
 }
 
 .file-explorer-header {
@@ -1394,7 +1389,6 @@ body {
   height: 100%;
   padding-top: 10px;
   padding-left: 10px;
-  height: calc(100% - 24px);
   font-family: Consolas;
 }
 
@@ -1405,6 +1399,10 @@ body {
 /*.editor-content .CodeMirror-line {
   filter: hue-rotate(160deg);
 }*/
+
+.editor-content .CodeMirror-scrollbar-filler {
+  background-color: var(--discord-dark);
+}
 
 .editor-content-missing {
   position: absolute;
@@ -1420,7 +1418,7 @@ body {
 
 .editor-content-missing h2 {
   font-size: 1.75rem;
-  margin-top: calc(50vh - 160px);
+  margin-top: calc(50vh - 67.5px);
 }
 
 .editor-content-missing div {

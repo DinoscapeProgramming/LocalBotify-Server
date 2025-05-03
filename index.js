@@ -1,12 +1,17 @@
 require("@teeny-tiny/dotenv").config();
-const PantrySDK = require("pantry.js");
 const express = require("express");
 const app = express();
+const http = require("http").Server(app);
+const io = require("socket.io")(http, {
+  cors: {
+    origin: "*"
+  }
+});
 const requestIp = require("request-ip");
 const rateLimit = require("express-rate-limit");
-const crypto = require("crypto");
-
+const PantrySDK = require("pantry.js");
 const pantry = new PantrySDK(process.env.PANTRY_ID);
+const crypto = require("crypto");
 
 app.use(express.json());
 app.use(requestIp.mw());
@@ -47,10 +52,119 @@ async function initializeBaskets() {
   }, 3600000);
 }
 
-if ((process.env.SAFE_MODE || "false") === "true") initializeBaskets().catch(console.error);
+if ((process.env.SAFE_MODE || "false") === "true") {
+  try {
+    initializeBaskets().catch(() => {});
+  } catch {};
+};
+
+io.on("connection", (socket, name) => {
+  socket.on("joinRoom", async (id) => {
+    if ((typeof id !== "string") || (id.length < 1) || ["version", "activity"].includes(id) || !io.of("/").adapter.rooms.has(id)) return;
+
+    socket.join(id);
+
+    socket.to(id).emit("retrieveFileSystem");
+
+    socket.on("retrieveFileContent", (fileName) => {
+      socket.to(id).emit("retrieveFileContent", fileName);
+    });
+
+    socket.on("newFileSystem", ([fileAction, fileNames]) => {
+      if (!["createFile", "createFolder", "delete", "rename"].includes(fileAction) || !Array.isArray(fileNames) || !fileNames.every((entry) => typeof entry === "string")) return;
+
+      socket.to(id).emit("newFileSystem", [
+        fileAction,
+        fileNames
+      ]);
+    });
+
+    socket.on("newFileContent", ([fileName, fileContent]) => {
+      if ((typeof fileName !== "string") || (typeof fileContent !== "string")) return;
+
+      socket.to(id).emit("newFileContent", [
+        fileName,
+        fileContent
+      ]);
+    });
+  });
+
+  socket.on("createRoom", () => {
+    let id = crypto.randomUUID();
+
+    socket.join(id);
+
+    socket.emit("createRoom", id);
+
+    socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
+      if (!Array.isArray(fileSystem) || !fileSystem.every((entry) => typeof entry === "string") || (typeof fileName !== "string") || (typeof fileContent !== "string")) return;
+
+      socket.to(id).emit("retrieveFileSystem", [
+        fileSystem,
+        fileName,
+        fileContent
+      ]);
+    });
+
+    socket.on("retrieveFileContent", ([fileName, fileContent]) => {
+      if (typeof fileName !== "string") return;
+
+      socket.to(id).emit("retrieveFileContent", [
+        fileName,
+        fileContent
+      ]);
+    });
+
+    socket.on("newFileSystem", (fileSystem) => {
+      if (!Array.isArray(fileSystem) || !fileSystem.every((entry) => typeof entry === "string")) return;
+
+      socket.to(id).emit("newFileSystem", fileSystem);
+    });
+
+    socket.on("newFileContent", ([fileName, fileContent]) => {
+      if ((typeof fileName !== "string") || (typeof fileContent !== "string")) return;
+
+      socket.to(id).emit("newFileContent", [
+        fileName,
+        fileContent
+      ]);
+    });
+
+    socket.on("newLink", () => {
+      socket.to(id).emit("newLink");
+      io.in(id).socketsLeave(id);
+
+      id = crypto.randomUUID();
+
+      socket.join(id);
+      socket.emit("newLink", id);
+    });
+
+    socket.on("disconnect", () => {
+      io.in(id).fetchSockets().then((sockets) => {
+        sockets.forEach((socket) => {
+          socket.leave(id);
+          socket.disconnect();
+        });
+      });
+    });
+  });
+});
 
 app.all("/ai", (req, res) => {
   res.sendFile("pages/ai/index.html", {
+    root: __dirname
+  });
+});
+
+app.all("/landingPage", (req, res) => {
+  res.sendFile("pages/landingPage/index.html", {
+    root: __dirname
+  });
+});
+
+app.all("/sessions/:sessionId", (req, res) => {
+  res.sendFile("pages/sessions/index.html", {
     root: __dirname
   });
 });
@@ -62,7 +176,7 @@ app.post("/api/v1/pro/verify", async (req, res) => {
   res.json(isValid);
 });
 
-app.all("/bots/:botId", async (req, res) => {
+/*app.all("/bots/:botId", async (req, res) => {
   const botSites = await pantry.botSites;
   const bot = botSites[req.params.botId];
   if (bot && botSites.version === "1") {
@@ -105,7 +219,7 @@ app.post("/api/v1/bots/add", async (req, res) => {
   botSites[id] = [req.clientIp || null, ...bot.slice(1)];
 
   res.status(200).json({ id });
-});
+});*/
 
 app.get("/api/v1/store/all", async (req, res) => {
   const store = await pantry.store;
@@ -198,6 +312,6 @@ app.post("/api/v1/reports/add", async (req, res) => {
   }
 });
 
-const listen = app.listen(3000, () => {
+const listen = http.listen(3000, () => {
   console.log("Server is now ready on port", listen.address().port);
 });
