@@ -542,7 +542,7 @@ socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
   });
 
   editor.on("change", (_, change) => {
-    if (change.origin !== "+input") return;
+    if (change.origin === "setValue") return;
 
     socket.emit("newFileContent", [
       getFilePath(editorView.querySelector(".file-tree .file-tree-item.active-file")),
