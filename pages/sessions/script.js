@@ -139,7 +139,7 @@ socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
           });
 
           contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
-            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFileTreeItem.dataset.filename || newFileTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFileTreeItem.dataset.filename || newFileTreeItem.querySelector("span").textContent.trim())}?`, "dangerous").then(() => {
               item.remove();
 
               socket.emit("newFileSystem", [
@@ -251,7 +251,7 @@ socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
           });
 
           contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
-            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFileTreeItem.dataset.filename || newFileTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFileTreeItem.dataset.filename || newFileTreeItem.querySelector("span").textContent.trim())}?`, "dangerous").then(() => {
               item.remove();
 
               socket.emit("newFileSystem", [
@@ -389,7 +389,7 @@ socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
           });
 
           contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
-            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFolderTreeItem.dataset.filename || newFolderTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFolderTreeItem.dataset.filename || newFolderTreeItem.querySelector("span").textContent.trim())}?`, "dangerous").then(() => {
               item.remove();
 
               socket.emit("newFileSystem", [
@@ -500,7 +500,7 @@ socket.on("retrieveFileSystem", ([fileSystem, fileName, fileContent]) => {
           });
 
           contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
-            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFolderTreeItem.dataset.filename || newFolderTreeItem.querySelector("span").textContent.trim())}?`).then(() => {
+            confirm("Delete File", `Are you sure you want to delete ${escapeHtml(newFolderTreeItem.dataset.filename || newFolderTreeItem.querySelector("span").textContent.trim())}?`, "dangerous").then(() => {
               item.remove();
 
               socket.emit("newFileSystem", [
@@ -689,7 +689,7 @@ function setupFileTreeListeners(editorView) {
       });
 
       contextMenu.querySelector(".context-menu-delete-btn").addEventListener("click", () => {
-        confirm("Delete File", `Are you sure you want to delete ${escapeHtml(item.dataset.filename || item.querySelector("span").textContent.trim())}?`).then(() => {
+        confirm("Delete File", `Are you sure you want to delete ${escapeHtml(item.dataset.filename || item.querySelector("span").textContent.trim())}?`, "dangerous").then(() => {
           item.remove();
 
           socket.emit("newFileSystem", [
