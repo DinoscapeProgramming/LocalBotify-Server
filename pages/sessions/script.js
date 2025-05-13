@@ -770,7 +770,7 @@ function renderFileTree(files) {
   }).join("");
 };
 
-function getFileTreeItem(view, path) {
+function getFileTreeItem(view, path = "") {
   let parts = path.split("/");
   let container = view.querySelector(".file-tree") || view.querySelector(".help-tree");
 
