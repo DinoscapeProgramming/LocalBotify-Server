@@ -176,6 +176,12 @@ app.all("/sessions/:sessionId", (req, res) => {
   });
 });
 
+app.all("/appLock", (req, res) => {
+  res.sendFile("pages/appLock/index.html", {
+    root: __dirname
+  });
+});
+
 app.post("/api/v1/pro/verify", async (req, res) => {
   const proTokens = await pantry.proTokens;
   const hashedToken = crypto.createHash("sha256").update(req.body).digest("hex");
