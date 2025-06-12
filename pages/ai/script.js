@@ -6,7 +6,7 @@ window.addEventListener("message", ({ data }) => {
     }
   ).then(async (response) => {
     for await (const part of response) {
-      parent.postMessage((part?.text || ""), "*");
+      parent.postMessage(part?.text || "", "*");
     };
 
     parent.postMessage(null, "*");

@@ -34,22 +34,26 @@ async function initializeBaskets() {
   const proTokens = await pantry.proTokens;
   const botSites = await pantry.botSites;
   const reports = await pantry.reports;
+  const developerModeKeys = await pantry.developerModeKeys;
 
   if (!store.version) store.version = "1";
   if (!proTokens.proTokens) proTokens.proTokens = [];
   if (!botSites.version) botSites.version = "1";
   if (!reports.version) reports.version = "1";
+  if (!developerModeKeys.developerModeKeys) developerModeKeys.developerModeKeys = [];
   
   proTokens.activity = Date.now();
   botSites.activity = Date.now();
   store.activity = Date.now();
   reports.activity = Date.now();
+  developerModeKeys.activity = Date.now();
 
   setInterval(() => {
     proTokens.activity = Date.now();
     botSites.activity = Date.now();
     store.activity = Date.now();
     reports.activity = Date.now();
+    developerModeKeys.activity = Date.now();
   }, 3600000);
 }
 
@@ -183,9 +187,9 @@ app.all("/appLock", (req, res) => {
 });
 
 app.post("/api/v1/pro/verify", async (req, res) => {
-  const proTokens = await pantry.proTokens;
-  const hashedToken = crypto.createHash("sha256").update(req.body).digest("hex");
-  const isValid = proTokens.proTokens.includes(hashedToken);
+  const { proTokens } = await pantry.proTokens;
+  const hashedToken = crypto.createHash("sha256").update(req.body.token).digest("hex");
+  const isValid = proTokens.includes(hashedToken);
   res.json(isValid);
 });
 
@@ -323,6 +327,13 @@ app.post("/api/v1/reports/add", async (req, res) => {
   } else {
     res.status(400).json({ err: "Invalid input data" });
   }
+});
+
+app.post("/api/v1/developerMode/verify", async (req, res) => {
+  const { developerModeKeys } = await pantry.developerModeKeys;
+  const hashedToken = crypto.createHash("sha256").update(req.body.key).digest("hex");
+  const isValid = developerModeKeys.includes(hashedToken);
+  res.json(isValid);
 });
 
 const listen = http.listen(3000, () => {
