@@ -17,6 +17,7 @@ const rateLimit = require("express-rate-limit");
 const PantrySDK = require("pantry.js");
 const pantry = new PantrySDK(process.env.PANTRY_ID);
 const jwt = require("jsonwebtoken");
+const { createProxyMiddleware } = require("http-proxy-middleware");
 const fs = require("fs");
 const crypto = require("crypto");
 
@@ -28,6 +29,13 @@ app.use(["/api/v1/store/add", "/api/v1/store/install", "/api/v1/store/like", "/a
   message: "Too many requests, please try again later.",
   standardHeaders: true,
   legacyHeaders: false
+}));
+app.use("/proxy", createProxyMiddleware({
+  target: "https://discord.com",
+  changeOrigin: true,
+  pathRewrite: {
+    '^/proxy': '/api'
+  }
 }));
 app.set("views", __dirname);
 app.set("view engine", "ejs");
