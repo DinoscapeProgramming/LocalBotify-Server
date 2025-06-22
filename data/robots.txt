@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /dashboard/
+Disallow: /login/
+Disallow: /api/
+Disallow: /*?*
+
+Allow: /
+
+Sitemap: https://localbotify.app/sitemap.xml

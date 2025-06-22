@@ -1,3 +1,4 @@
+const fs = require("fs");
 const { generateKeyPairSync } = require("crypto");
 
 const { publicKey, privateKey } = generateKeyPairSync("rsa", {
@@ -12,9 +13,7 @@ const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   }
 });
 
-console.log("Public Key:\n", publicKey);
-console.log("Private Key:\n", privateKey);
+if (!fs.existsSync("../keys")) fs.mkdirSync("../keys");
 
-const fs = require("fs");
-fs.writeFileSync("public.pem", publicKey);
-fs.writeFileSync("private.pem", privateKey);
+fs.writeFileSync("../keys/public.pem", publicKey);
+fs.writeFileSync("../keys/private.pem", privateKey);

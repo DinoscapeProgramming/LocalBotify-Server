@@ -36,6 +36,7 @@ app.use("/proxy", proxy("https://discord.com", {
 app.set("views", __dirname);
 app.set("view engine", "ejs");
 app.use(express.static("pages/home"));
+app.use(express.static("data"));
 app.use("/assets", express.static("assets"));
 app.use("/pages", express.static("pages"));
 app.use("/packages", express.static("packages"));

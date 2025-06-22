@@ -1,0 +1,3 @@
+Contact: security@localbotify.app
+Acknowledgements: https://localbotify.app/hall-of-fame.html
+Preferred-Languages: de, en

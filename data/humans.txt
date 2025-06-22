@@ -1,0 +1,6 @@
+/* TEAM */
+Developer: DinoscapeProgramming
+
+/* SITE */
+Last update: 2025-06-22
+Technology: React, Node.js, Discord API
