@@ -20,6 +20,7 @@ const jwt = require("jsonwebtoken");
 const proxy = require("express-http-proxy");
 const fs = require("fs");
 const crypto = require("crypto");
+const cloud = require("./cloud/manager.js")(pantry.cloud);
 
 app.use(express.json());
 app.use(requestIp.mw());
@@ -401,6 +402,8 @@ app.all("/api/v1/feedback/send", (req, res) => {
     })
   }).catch(() => {});
 });
+
+app.all("/api/v1/cloud/add");
 
 const listen = http.listen(3000, () => {
   console.log("Server is now ready on port", listen.address().port);
