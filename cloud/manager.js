@@ -18,7 +18,7 @@ function chunkBots(botList, size) {
 
 function spawnCluster(botGroup) {
   const clusterId = `cluster_${++clusterIdCounter}`;
-  const child = fork("./cluster.js");
+  const child = fork("./cloud/cluster.js");
   const botNames = Object.keys(botGroup);
   clusters.set(clusterId, { child, botNames });
 
@@ -82,10 +82,10 @@ function addBots(newBots) {
 };
 
 function init(botBasket) {
-  if (!botBasket || !Object.keys(botBasket).length) return;
-
-  const botChunks = chunkBots(botBasket, botsPerCluster);
-  botChunks.forEach(spawnCluster);
+  if (botBasket && Object.keys(botBasket).length) {
+    const botChunks = chunkBots(botBasket, botsPerCluster);
+    botChunks.forEach(spawnCluster);
+  };
 
   return {
     stopBot,

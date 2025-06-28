@@ -29,26 +29,9 @@ async function startBots(bots) {
   for (const [botName, config] of Object.entries(bots)) {
     if (clients[botName]) continue;
 
-    const client = new Client({
-      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
-    });
+    const { client } = await require("./cloud/bot.js")(config);
 
-    client.once("ready", () => {
-      console.log(`${botName} is ready.`);
-    });
-
-    client.on("messageCreate", (message) => {
-      if (message.content === `${config.prefix || "!"}ping`) {
-        message.reply("pong");
-      }
-    });
-
-    try {
-      await client.login(config.token);
-      clients[botName] = client;
-    } catch (err) {
-      console.error(`Failed to login ${botName}:`, err);
-    };
+    clients[botName] = client;
   };
 };
 

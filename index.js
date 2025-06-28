@@ -403,7 +403,35 @@ app.all("/api/v1/feedback/send", (req, res) => {
   }).catch(() => {});
 });
 
-app.all("/api/v1/cloud/add");
+app.all("/api/v1/cloud/add", (req, res) => {
+  const id = crypto.randomBytes(4).toString("hex");
+
+  pantry.cloud[id] = req.body;
+
+  try {
+    cloud.addBots({
+      [id]: req.body
+    });
+
+    res.status(200).json({ err: null, message: "Bot added successfully", id });
+  } catch (err) {
+    console.error("Error adding bots:", err);
+    res.status(500).json({ err: "Failed to add bot", message: null, id: null });
+  };
+});
+
+app.all("/api/v1/cloud/remove", (req, res) => {
+  delete pantry.cloud[req.body.id];
+
+  try {
+    cloud.stopBot(req.body.id)
+
+    res.status(200).json({ err: null, message: "Bot removed successfully" });
+  } catch (err) {
+    console.error("Error adding bots:", err);
+    res.status(500).json({ err: "Failed to remove bot", message: null });
+  };
+});
 
 const listen = http.listen(3000, () => {
   console.log("Server is now ready on port", listen.address().port);
