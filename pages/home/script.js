@@ -68,6 +68,13 @@ document.querySelectorAll(".faq-item").forEach(item => {
   });
 });
 
+document.querySelector(".nav-logo").addEventListener("click", () => {
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
+});
+
 document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
   anchor.addEventListener("click", function (e) {
     e.preventDefault();
@@ -312,6 +319,12 @@ document.head.appendChild(typingStyle);
 
 document.querySelectorAll(".download-btn").forEach((button) => {
   button.addEventListener("click", function () {
+    const a = document.createElement("a");
+
+    a.href = "https://github.com/DinoscapeProgramming/Remote-Control/releases/download/v1.0.0/Remote.Control.Setup.1.0.0.exe";
+
+    a.click();
+
     const platform = this.dataset.platform || "windows";
     const originalText = this.innerHTML;
 
@@ -333,7 +346,7 @@ document.querySelectorAll(".download-btn").forEach((button) => {
 
     this.style.position = "relative";
     this.appendChild(progressBar);
-    
+
     this.innerHTML = `
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="animate-spin">
         <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" stroke-dasharray="31.416" stroke-dashoffset="31.416">
@@ -343,17 +356,17 @@ document.querySelectorAll(".download-btn").forEach((button) => {
       </svg>
       Downloading...
     `;
-    
+
     setTimeout(() => {
       progressBar.style.width = "100%";
     }, 100);
-    
+
     setTimeout(() => {
       this.innerHTML = `
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
           <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2" fill="none"/>
         </svg>
-        Download Complete!
+        Download Ready!
       `;
 
       this.style.background = "var(--success-color)";
@@ -365,8 +378,8 @@ document.querySelectorAll(".download-btn").forEach((button) => {
         this.style.transform = "";
         this.style.background = "";
         progressBar.remove();
-        
-        showNotification(`LocalBotify installer downloaded successfully!`, "success");
+
+        // showNotification(`LocalBotify installer download started successfully!`, "success");
       }, 1500);
     }, 2000);
   });
@@ -377,9 +390,9 @@ function showNotification(message, type = "info") {
 
   notification.style.cssText = `
     position: fixed;
-    top: 100px;
+    top: 22.5px;
     right: 20px;
-    background: ${type === "success" ? "var(--success-color)" : "var(--primary-color)"};
+    background: ${(type === "success") ? "var(--success-color)" : "var(--primary-color)"};
     color: white;
     padding: 16px 24px;
     border-radius: 8px;
@@ -394,9 +407,6 @@ function showNotification(message, type = "info") {
 
   notification.innerHTML = `
     <div style="display: flex; align-items: center; gap: 8px;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-        <path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2"/>
-      </svg>
       ${message}
     </div>
   `;
@@ -476,6 +486,20 @@ pulseStyle.textContent = `
 document.head.appendChild(pulseStyle);
 
 setTimeout(addPeriodicAnimations, 3000);
+
+document.addEventListener("click", (e) => {
+  if (e.target.textContent.trim() === "Download For Free") {
+    const a = document.createElement("a");
+
+    a.href = "https://github.com/DinoscapeProgramming/Remote-Control/releases/download/v1.0.0/Remote.Control.Setup.1.0.0.exe";
+
+    a.click();
+  } else if (e.target.textContent === "Contact Support") {
+    setTimeout(() => window.open("/support", "_self"), 250);
+  } else if (e.target.textContent === "Join Discord") {
+    setTimeout(() => window.open("https://discord.gg/2efZxNZfh5", "_blank"), 250);
+  };
+});
 
 console.log(
   "%c⚠️ WARNING ⚠️%c\n\n%cHey there, LocalBotify user! 🚫 Do NOT paste anything here unless you know exactly what you're doing.",

@@ -404,6 +404,8 @@ app.all("/api/v1/feedback/send", (req, res) => {
 });
 
 app.all("/api/v1/cloud/add", (req, res) => {
+  if ((typeof req.body.token !== "string") || !Array.isArray(req.body.commands) || req.body.commands.some((command) => (typeof command !== "string")) || !Array.isArray(req.body.events) || req.body.events.some((event) => (typeof event !== "string")) || (Object.prototype.toString.call(req.body.config) !== "[object Object]") || (Object.prototype.toString.call(req.body.store) !== "[object Object]")) return res.status(500).json({ err: "Failed to add bot", message: null });
+
   const id = crypto.randomBytes(4).toString("hex");
 
   pantry.cloud[id] = req.body;
@@ -421,6 +423,8 @@ app.all("/api/v1/cloud/add", (req, res) => {
 });
 
 app.all("/api/v1/cloud/remove", (req, res) => {
+  if (!req.body.id || !pantry.cloud[req.body.id]) return res.status(500).json({ err: "Failed to remove bot", message: null });
+
   delete pantry.cloud[req.body.id];
 
   try {
