@@ -321,7 +321,7 @@ document.querySelectorAll(".download-btn").forEach((button) => {
   button.addEventListener("click", function () {
     const a = document.createElement("a");
 
-    a.href = "https://github.com/DinoscapeProgramming/Remote-Control/releases/download/v1.0.0/Remote.Control.Setup.1.0.0.exe";
+    a.href = "https://github.com/DinoscapeProgramming/LocalBotify-Releases/releases/download/v0.9.0/LocalBotify.Setup.0.9.0.exe";
 
     a.click();
 
@@ -491,7 +491,7 @@ document.addEventListener("click", (e) => {
   if (e.target.textContent.trim() === "Download For Free") {
     const a = document.createElement("a");
 
-    a.href = "https://github.com/DinoscapeProgramming/Remote-Control/releases/download/v1.0.0/Remote.Control.Setup.1.0.0.exe";
+    a.href = "https://github.com/DinoscapeProgramming/LocalBotify-Releases/releases/download/v0.9.0/LocalBotify.Setup.0.9.0.exe";
 
     a.click();
   } else if (e.target.textContent === "Contact Support") {
