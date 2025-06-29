@@ -323,7 +323,7 @@ document.querySelector(".login-btn").addEventListener("click", () => {
 
   const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
 
-  setTimeout(() => window.open(authUrl, "_self"), 250);
+  setTimeout(() => window.open((document.querySelector(".login-btn").textContent === "Login via Discord") ? authUrl : "/dashboard", "_self"), 250);
 });
 
 document.querySelectorAll(".download-btn").forEach((button) => {

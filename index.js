@@ -18,12 +18,18 @@ const PantrySDK = require("pantry.js");
 const pantry = new PantrySDK(process.env.PANTRY_ID);
 const jwt = require("jsonwebtoken");
 const proxy = require("express-http-proxy");
+const session = require("express-session");
 const fs = require("fs");
 const crypto = require("crypto");
 const cloud = require("./cloud/manager.js")(pantry.cloud);
 
 app.use(express.json());
 app.use(requestIp.mw());
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: true
+}));
 app.use(["/api/v1/store/add", "/api/v1/store/install", "/api/v1/store/like", "/api/v1/reports/add", "/api/v1/feedback/send"], rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 100,
@@ -170,8 +176,8 @@ io.on("connection", (socket, name) => {
 });
 
 app.all("/", (req, res) => {
-  res.sendFile("pages/home/index.html", {
-    root: __dirname
+  res.render("pages/home/index.ejs", {
+    isAuthenticated: !!req.session.user
   });
 });
 
@@ -197,6 +203,49 @@ app.all("/appLock", (req, res) => {
   res.sendFile("pages/appLock/index.html", {
     root: __dirname
   });
+});
+
+app.all("/dashboard", (req, res) => {
+  if (!req.session.user) return res.redirect(`https://discord.com/api/oauth2/authorize?client_id=${process.env.CLIENT_ID}&redirect_uri=${encodeURIComponent(`${req.protocol}://${req.get("host")}/auth/redirect`)}&response_type=code&scope=identify`);
+
+  res.render("pages/dashboard/index.ejs", {
+    root: __dirname
+  });
+});
+
+app.all("/auth/redirect", async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.send('No code found.');
+
+  const params = new URLSearchParams();
+  params.append("client_id", process.env.CLIENT_ID);
+  params.append("client_secret", process.env.CLIENT_SECRET);
+  params.append("grant_type", "authorization_code");
+  params.append("code", code);
+  params.append("redirect_uri", `${req.protocol}://${req.get("host")}/auth/redirect`);
+  params.append("scope", "identify");
+
+  const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
+    method: "POST",
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params
+  });
+
+  const tokenData = await tokenResponse.json();
+
+  const userResponse = await fetch("https://discord.com/api/users/@me", {
+    headers: {
+      Authorization: `${tokenData.token_type} ${tokenData.access_token}`
+    }
+  });
+
+  const userData = await userResponse.json();
+
+  req.session.user = userData;
+
+  res.redirect("/dashboard");
 });
 
 app.post("/api/v1/pro/generate-token", async (req, res) => {
@@ -419,6 +468,21 @@ app.all("/api/v1/cloud/add", (req, res) => {
   } catch (err) {
     console.error("Error adding bots:", err);
     res.status(500).json({ err: "Failed to add bot", message: null, id: null });
+  };
+});
+
+app.all("/api/v1/cloud/update", (req, res) => {
+  if (!req.body.id || !pantry.cloud[req.body.id] || (typeof req.body.token !== "string") || !Array.isArray(req.body.commands) || req.body.commands.some((command) => (typeof command !== "string")) || !Array.isArray(req.body.events) || req.body.events.some((event) => (typeof event !== "string")) || (Object.prototype.toString.call(req.body.config) !== "[object Object]") || (Object.prototype.toString.call(req.body.store) !== "[object Object]")) return res.status(500).json({ err: "Failed to update bot", message: null });
+
+  pantry.cloud[id] = Object.fromEntries(Object.entries(req.body).filter(([key]) => (key !== "id")));
+
+  try {
+    cloud.updateBot(req.body.id, req.body);
+
+    res.status(200).json({ err: null, message: "Bot updated successfully" });
+  } catch (err) {
+    console.error("Error updating bots:", err);
+    res.status(500).json({ err: "Failed to update bot", message: null });
   };
 });
 

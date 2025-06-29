@@ -25,11 +25,13 @@ function spawnCluster(botGroup) {
   child.send({ type: "start", bots: botGroup });
 
   child.on("message", (msg) => {
-    if (msg.type === 'ready') {
+    if (msg.type === "ready") {
       console.log(`[${clusterId}] is ready.`);
-    } else if (msg.type === 'botStopped') {
+    } else if (msg.type === "botUpdated") {
+      console.log(`[${clusterId}] Bot ${msg.botName} updated.`)
+    } else if (msg.type === "botStopped") {
       console.log(`[${clusterId}] Bot ${msg.botName} stopped.`);
-    } else if (msg.type === 'stopped') {
+    } else if (msg.type === "stopped") {
       console.log(`[${clusterId}] Stopped.`);
       child.kill();
       clusters.delete(clusterId);
@@ -37,23 +39,6 @@ function spawnCluster(botGroup) {
   });
 
   return clusterId;
-};
-
-function stopBot(botName) {
-  for (const [clusterId, { child, botNames }] of clusters.entries()) {
-    if (botNames.includes(botName)) {
-      child.send({ type: "stopBot", botName });
-      clusters.set(clusterId, {
-        child,
-        botNames: botNames.filter(name => name !== botName),
-      });
-
-      return true;
-    };
-  };
-
-  console.log(`Bot ${botName} not found.`);
-  return false;
 };
 
 function addBots(newBots) {
@@ -81,6 +66,35 @@ function addBots(newBots) {
   };
 };
 
+function updateBot(botName, config) {
+  for (const [_, { child, botNames }] of clusters.entries()) {
+    if (botNames.includes(botName)) {
+      child.send({ type: "updateBot", botName, config });
+      return true;
+    };
+  };
+
+  console.log(`Bot ${botName} not found.`);
+  return false;
+};
+
+function stopBot(botName) {
+  for (const [clusterId, { child, botNames }] of clusters.entries()) {
+    if (botNames.includes(botName)) {
+      child.send({ type: "stopBot", botName });
+      clusters.set(clusterId, {
+        child,
+        botNames: botNames.filter(name => name !== botName),
+      });
+
+      return true;
+    };
+  };
+
+  console.log(`Bot ${botName} not found.`);
+  return false;
+};
+
 function init(botBasket) {
   if (botBasket && Object.keys(botBasket).length) {
     const botChunks = chunkBots(botBasket, botsPerCluster);
@@ -88,9 +102,10 @@ function init(botBasket) {
   };
 
   return {
-    stopBot,
     addBots,
+    stopBot,
+    updateBot
   };
-}
+};
 
 module.exports = init;

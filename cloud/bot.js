@@ -414,10 +414,11 @@ ${lines.map(center).join("\n")}
 
   client.login(process.env.TOKEN);
 
-  return {
-    client,
-    updateConfig: (newConfig) => {
-      config = newConfig;
-    }
+  client.currentConfig = config;
+
+  client.updateConfig = (newConfig) => {
+    config = newConfig;
   };
+
+  return client;
 };
