@@ -317,6 +317,15 @@ typingStyle.textContent = `
 
 document.head.appendChild(typingStyle);
 
+document.querySelector(".login-btn").addEventListener("click", () => {
+  const clientId = "1388878555831865557";
+  const redirectUri = location.origin + "/auth/redirect";
+
+  const authUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
+
+  setTimeout(() => window.open(authUrl, "_self"), 250);
+});
+
 document.querySelectorAll(".download-btn").forEach((button) => {
   button.addEventListener("click", function () {
     const a = document.createElement("a");
